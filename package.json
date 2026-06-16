@@ -20,7 +20,8 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pdfkit": "^0.19.1"
   },
   "devDependencies": {
     "xlsx": "^0.18.5"

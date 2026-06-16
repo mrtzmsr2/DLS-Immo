@@ -9,6 +9,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const XLSX = require('xlsx');
+const PDFDocument = require('pdfkit');
 
 const app = express();
 const PORT = process.env.PORT || 3300;
@@ -136,8 +138,13 @@ function makeCrud(collection, { idPrefix, validate }) {
     // Abhängige Datensätze miträumen.
     if (collection === 'studios') {
       (removed.fotos || []).forEach((f) => deleteUploadFile(f.datei));
+      const removedInfra = (db.infrastruktur || []).filter((i) => i.studioId === removed.id);
+      removedInfra.forEach((i) => (i.fotos || []).forEach((f) => deleteUploadFile(f.datei)));
       db.infrastruktur = (db.infrastruktur || []).filter((i) => i.studioId !== removed.id);
       db.nachrichten = (db.nachrichten || []).filter((n) => n.studioId !== removed.id);
+    }
+    if (collection === 'infrastruktur') {
+      (removed.fotos || []).forEach((f) => deleteUploadFile(f.datei));
     }
     writeDb(db);
     res.json({ ok: true, removed });
@@ -220,6 +227,216 @@ app.delete('/api/studios/:id/fotos/:fotoId', (req, res) => {
   studio.geaendertAm = nowIso();
   writeDb(db);
   res.json({ ok: true, removed });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Mangel-Fotos & Kommentare (Infrastruktur)
+// ───────────────────────────────────────────────────────────────────────────
+function findInfra(db, id) {
+  return (db.infrastruktur || []).find((i) => i.id === id);
+}
+
+app.post('/api/infrastruktur/:id/fotos', (req, res) => {
+  const db = readDb();
+  const infra = findInfra(db, req.params.id);
+  if (!infra) return res.status(404).json({ error: 'Mangel nicht gefunden' });
+  const fname = saveDataUrlImage(req.body.dataUrl);
+  if (!fname)
+    return res.status(400).json({ error: 'Ungültiges oder zu großes Bild (max. 8 MB, JPG/PNG/WebP)' });
+  const foto = {
+    id: uid('foto'),
+    datei: '/uploads/' + fname,
+    beschreibung: (req.body.beschreibung || '').trim(),
+    hochgeladenVon: (req.body.hochgeladenVon || '').trim(),
+    hochgeladenAm: nowIso(),
+  };
+  infra.fotos = infra.fotos || [];
+  infra.fotos.push(foto);
+  infra.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(foto);
+});
+
+app.delete('/api/infrastruktur/:id/fotos/:fotoId', (req, res) => {
+  const db = readDb();
+  const infra = findInfra(db, req.params.id);
+  if (!infra) return res.status(404).json({ error: 'Mangel nicht gefunden' });
+  const list = infra.fotos || [];
+  const idx = list.findIndex((f) => f.id === req.params.fotoId);
+  if (idx === -1) return res.status(404).json({ error: 'Foto nicht gefunden' });
+  const [removed] = list.splice(idx, 1);
+  deleteUploadFile(removed.datei);
+  infra.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
+
+app.post('/api/infrastruktur/:id/kommentare', (req, res) => {
+  const db = readDb();
+  const infra = findInfra(db, req.params.id);
+  if (!infra) return res.status(404).json({ error: 'Mangel nicht gefunden' });
+  const text = (req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Text ist erforderlich' });
+  const kommentar = {
+    id: uid('kom'),
+    text,
+    team: (req.body.team || '').trim(),
+    autor: (req.body.autor || '').trim(),
+    typ: req.body.typ === 'status' ? 'status' : 'kommentar',
+    erstelltAm: nowIso(),
+  };
+  infra.kommentare = infra.kommentare || [];
+  infra.kommentare.push(kommentar);
+  infra.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(kommentar);
+});
+
+app.delete('/api/infrastruktur/:id/kommentare/:kid', (req, res) => {
+  const db = readDb();
+  const infra = findInfra(db, req.params.id);
+  if (!infra) return res.status(404).json({ error: 'Mangel nicht gefunden' });
+  const list = infra.kommentare || [];
+  const idx = list.findIndex((k) => k.id === req.params.kid);
+  if (idx === -1) return res.status(404).json({ error: 'Kommentar nicht gefunden' });
+  const [removed] = list.splice(idx, 1);
+  infra.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Mängelbericht-Export (Excel / PDF) – optional je Standort
+// ───────────────────────────────────────────────────────────────────────────
+const STATUS_LABEL = {
+  ok: 'OK',
+  provisorisch: 'Provisorisch',
+  handlungsbedarf: 'Handlungsbedarf',
+  kritisch: 'Kritisch',
+};
+const BEARB_LABEL = { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt' };
+const AUSR_LABEL = { ja: 'Reicht aus', ja_vorerst: 'Reicht vorerst', nein: 'Reicht nicht' };
+
+function buildReportRows(standort) {
+  const db = readDb();
+  const studioById = {};
+  (db.studios || []).forEach((s) => (studioById[s.id] = s));
+  return (db.infrastruktur || [])
+    .map((i) => ({ i, s: studioById[i.studioId] }))
+    .filter(({ s }) => s && (!standort || s.standort === standort))
+    .sort((a, b) => {
+      const rank = { kritisch: 4, handlungsbedarf: 3, provisorisch: 2, ok: 1 };
+      return (
+        (rank[b.i.status] || 0) - (rank[a.i.status] || 0) ||
+        (a.s.standort || '').localeCompare(b.s.standort || '', 'de')
+      );
+    });
+}
+
+app.get('/api/export/excel', (req, res) => {
+  const standort = (req.query.standort || '').trim();
+  const rows = buildReportRows(standort);
+  const data = rows.map(({ i, s }) => ({
+    Standort: s.standort || '',
+    Studio: s.name || '',
+    Kategorie: i.kategorie || '',
+    Titel: i.titel || '',
+    Status: STATUS_LABEL[i.status] || i.status || '',
+    Bearbeitung: BEARB_LABEL[i.bearbeitungsstatus] || 'Offen',
+    'Reicht aus?': AUSR_LABEL[i.ausreichend] || '',
+    Zuständig: i.zustaendig || '',
+    'Fällig bis': i.faelligBis || '',
+    Vorhanden: i.vorhandeneGeraete || '',
+    Benötigt: i.benoetigt || '',
+    Beschreibung: i.beschreibung || '',
+    Fotos: (i.fotos || []).length,
+    Kommentare: (i.kommentare || []).length,
+  }));
+  const ws = XLSX.utils.json_to_sheet(data.length ? data : [{ Hinweis: 'Keine Einträge' }]);
+  ws['!cols'] = [
+    { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 14 },
+    { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 40 },
+    { wch: 7 }, { wch: 10 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Mängelbericht');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const fname = `Maengelbericht_${standort || 'Alle'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader('Content-Disposition', `attachment; filename="${fname.replace(/[^\w.\-]/g, '_')}"`);
+  res.send(buf);
+});
+
+app.get('/api/export/pdf', (req, res) => {
+  const standort = (req.query.standort || '').trim();
+  const rows = buildReportRows(standort);
+  const fname = `Maengelbericht_${standort || 'Alle'}_${new Date().toISOString().slice(0, 10)}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${fname.replace(/[^\w.\-]/g, '_')}"`);
+
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  doc.pipe(res);
+
+  doc.fillColor('#008c82').fontSize(20).text('Mängelbericht', { continued: false });
+  doc
+    .fillColor('#5a626d')
+    .fontSize(11)
+    .text(`Standort: ${standort || 'Alle Standorte'}`)
+    .text(`Erstellt: ${new Date().toLocaleString('de-DE')}`)
+    .text(`Einträge: ${rows.length}`);
+  doc.moveDown(0.6);
+
+  if (!rows.length) {
+    doc.fillColor('#2c333b').fontSize(12).text('Keine Einträge vorhanden.');
+    doc.end();
+    return;
+  }
+
+  rows.forEach(({ i, s }, n) => {
+    if (doc.y > 740) doc.addPage();
+    const statusColor =
+      i.status === 'kritisch'
+        ? '#dc3545'
+        : i.status === 'handlungsbedarf'
+        ? '#fd7e14'
+        : i.status === 'provisorisch'
+        ? '#d39e00'
+        : '#28a745';
+    doc
+      .fillColor('#2c333b')
+      .fontSize(12.5)
+      .text(`${n + 1}. ${s.standort || '—'} · ${s.name || '—'} — ${i.titel || i.kategorie || 'Mangel'}`);
+    doc
+      .fillColor(statusColor)
+      .fontSize(10)
+      .text(
+        `Status: ${STATUS_LABEL[i.status] || i.status || '—'}  |  Bearbeitung: ${
+          BEARB_LABEL[i.bearbeitungsstatus] || 'Offen'
+        }  |  Reicht aus: ${AUSR_LABEL[i.ausreichend] || '—'}`
+      );
+    doc.fillColor('#5a626d').fontSize(10);
+    if (i.zustaendig || i.faelligBis)
+      doc.text(`Zuständig: ${i.zustaendig || '—'}   Fällig bis: ${i.faelligBis || '—'}`);
+    if (i.beschreibung) doc.text(`Beschreibung: ${i.beschreibung}`);
+    if (i.vorhandeneGeraete) doc.text(`Vorhanden: ${i.vorhandeneGeraete}`);
+    if (i.benoetigt) doc.fillColor('#856404').text(`Benötigt: ${i.benoetigt}`).fillColor('#5a626d');
+    const nf = (i.fotos || []).length;
+    const nk = (i.kommentare || []).length;
+    if (nf || nk) doc.text(`Fotos: ${nf}   Kommentare: ${nk}`);
+    doc.moveDown(0.5);
+    doc
+      .strokeColor('#dde2e7')
+      .lineWidth(0.5)
+      .moveTo(40, doc.y)
+      .lineTo(555, doc.y)
+      .stroke();
+    doc.moveDown(0.4);
+  });
+
+  doc.end();
 });
 
 // Gesamter Zustand auf einen Schlag (für initiales Laden des Frontends).

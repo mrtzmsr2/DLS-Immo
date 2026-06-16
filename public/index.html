@@ -246,7 +246,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 // ════════════════════════════════════════════════════════════════════════════
 //  STATE & API
 // ════════════════════════════════════════════════════════════════════════════
-const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], current:'dashboard', currentStudio:null, currentThread:null };
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null };
 const Me = {
   get name(){ return localStorage.getItem('dls_name') || ''; },
   get team(){ return localStorage.getItem('dls_team') || ''; },
@@ -496,8 +496,9 @@ function infraItem(i){
   const erledigt=i.bearbeitungsstatus==='erledigt';
   const ueberfaellig = i.faelligBis && !erledigt && new Date(i.faelligBis) < new Date(new Date().toDateString());
   return `<div class="infra-item s-${esc(i.status)}" style="${erledigt?'opacity:.62':''}">
-    <div class="infra-head"><h4>${esc(i.titel)}</h4>
+    <div class="infra-head"><h4 style="cursor:pointer" onclick="openMangel('${i.id}')" title="Details öffnen">${esc(i.titel)}</h4>
       <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-ghost" onclick="openMangel('${i.id}')" title="Details, Fotos & Verlauf">🔍</button>
         <button class="btn-ghost" onclick="toggleErledigt('${i.id}',${!erledigt})" title="${erledigt?'Wieder öffnen':'Als erledigt markieren'}">${erledigt?'↩️':'✅'}</button>
         <button class="btn-ghost" onclick="openInfraModal('${i.id}')" title="Bearbeiten">✏️</button>
         <button class="btn-ghost" onclick="deleteInfra('${i.id}')" title="Löschen">🗑️</button>
@@ -512,6 +513,8 @@ function infraItem(i){
       <span class="badge ${bs.badge}">${bs.label}</span>
       ${ausrBadge(i.ausreichend)}
       ${i.hitzekritisch==='ja'?'<span class="badge badge-red">hitzekritisch</span>':''}
+      ${(i.fotos||[]).length?`<span title="Fotos">📷 ${i.fotos.length}</span>`:''}
+      ${(i.kommentare||[]).length?`<span title="Kommentare">💬 ${i.kommentare.length}</span>`:''}
       ${i.zustaendig?`<span title="Zuständig">👤 ${esc(i.zustaendig)}</span>`:''}
       ${i.faelligBis?`<span class="badge ${ueberfaellig?'badge-red':'badge-blue'}" title="Fällig bis">📅 ${fmtD(i.faelligBis)}</span>`:''}
       <span style="margin-left:auto">${esc(i.erstelltVon||'')} · ${fmtDT(i.geaendertAm)}</span>
@@ -525,6 +528,89 @@ async function toggleErledigt(id,done){
     if(State.currentStudio && document.getElementById('overlay').classList.contains('open')) openStudio(State.currentStudio);
     else navigate(State.current);
   }catch(e){ toast(e.message,'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  MANGEL-DETAIL (Fotos + Kommentar-/Verlaufsspur)
+// ════════════════════════════════════════════════════════════════════════════
+function openMangel(id){
+  const i = State.infrastruktur.find(x=>x.id===id); if(!i) return;
+  State.currentMangel = id;
+  const s = studioById(i.studioId);
+  const st = INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
+  const bs = BEARBEITUNG[i.bearbeitungsstatus]||BEARBEITUNG.offen;
+  const fotos = (i.fotos||[]).slice().sort((a,b)=>new Date(b.hochgeladenAm)-new Date(a.hochgeladenAm));
+  const koms = (i.kommentare||[]).slice().sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const body = `
+    <div class="detail-row"><div class="detail-label">Studio</div><div>${esc(s?s.standort+' · '+s.name:'—')}</div></div>
+    <div class="detail-row"><div class="detail-label">Kategorie</div><div>${esc(i.kategorie||'—')}</div></div>
+    <div class="detail-row"><div class="detail-label">Status</div><div><span class="badge ${st.badge}">${st.label}</span> <span class="badge ${bs.badge}">${bs.label}</span> ${ausrBadge(i.ausreichend)}</div></div>
+    ${i.zustaendig?`<div class="detail-row"><div class="detail-label">Zuständig</div><div>${esc(i.zustaendig)}</div></div>`:''}
+    ${i.faelligBis?`<div class="detail-row"><div class="detail-label">Fällig bis</div><div>${fmtD(i.faelligBis)}</div></div>`:''}
+    ${i.beschreibung?`<div class="detail-row"><div class="detail-label">Beschreibung</div><div>${esc(i.beschreibung)}</div></div>`:''}
+    ${i.vorhandeneGeraete?`<div class="detail-row"><div class="detail-label">Vorhanden</div><div>${esc(i.vorhandeneGeraete)}</div></div>`:''}
+    ${i.benoetigt?`<div class="detail-row"><div class="detail-label">Benötigt</div><div>${esc(i.benoetigt)}</div></div>`:''}
+
+    <div class="section-title">📷 Fotos vom Mangel (${fotos.length})</div>
+    ${fotos.length?`<div class="foto-grid">${fotos.map(f=>`
+      <div class="foto-thumb">
+        <img src="${esc(f.datei)}" alt="Mangelfoto" onclick="openLightbox('${esc(f.datei)}','${esc((i.titel||'')+(f.hochgeladenVon?' · '+f.hochgeladenVon:''))}')">
+        <div class="foto-cap" title="${esc(f.hochgeladenVon||'')}">${esc(f.hochgeladenVon||'—')}</div>
+        <button class="foto-del" onclick="deleteInfraFoto('${id}','${f.id}')" title="Foto löschen">×</button>
+      </div>`).join('')}</div>`:'<div class="empty-state" style="padding:16px">Noch keine Fotos</div>'}
+    <button class="btn btn-secondary btn-sm" onclick="pickInfraFoto('${id}')">📷 Foto hinzufügen</button>
+
+    <div class="section-title">🕓 Verlauf & Kommentare (${koms.length})</div>
+    <div class="feed" id="mangelFeed" style="max-height:42vh">${koms.length? koms.map(komItem).join('') : '<div class="empty-state" style="padding:16px">Noch keine Einträge</div>'}</div>
+    <div class="composer">
+      <textarea id="mangelKom" placeholder="Kommentar / Statusnotiz zum Mangel..."></textarea>
+      <button class="btn btn-primary" onclick="sendMangelKom('${id}')">Hinzufügen</button>
+    </div>`;
+  openModal(`${esc(i.titel||'Mangel')} – Details`, body, [
+    {label:'Bearbeiten', cls:'btn-secondary', fn:()=>openInfraModal(id)},
+    {label:'Schließen', cls:'btn-primary', fn:closeModal}
+  ], 'modal-wide');
+  const mf=document.getElementById('mangelFeed'); if(mf) mf.scrollTop=mf.scrollHeight;
+}
+function komItem(k){
+  const team=k.team==='DLS'?'badge-blue':(k.team==='Immo'?'badge-green':'badge-gray');
+  return `<div class="msg team-${esc(k.team||'')}">
+    <div class="msg-avatar">${initials(k.autor)}</div>
+    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(k.autor||'—')}</span>${k.team?`<span class="badge ${team}">${esc(k.team)}</span>`:''}${k.typ==='status'?'<span class="badge badge-purple">Status</span>':''}<span class="msg-time">${fmtDT(k.erstelltAm)}</span><button class="btn-ghost" style="margin-left:auto" onclick="deleteMangelKom('${State.currentMangel}','${k.id}')" title="Löschen">🗑️</button></div><div class="msg-text">${esc(k.text)}</div></div>
+  </div>`;
+}
+async function sendMangelKom(id){
+  if(!requireUser()) return;
+  const ta=document.getElementById('mangelKom'); const text=(ta.value||'').trim(); if(!text) return;
+  try{
+    await api('/infrastruktur/'+id+'/kommentare',{method:'POST',body:JSON.stringify({text,team:Me.team,autor:Me.name})});
+    await loadState(); toast('Kommentar gespeichert','success'); openMangel(id);
+  }catch(e){ toast(e.message,'error'); }
+}
+async function deleteMangelKom(id,kid){
+  if(!confirm('Kommentar löschen?')) return;
+  try{ await api('/infrastruktur/'+id+'/kommentare/'+kid,{method:'DELETE'}); await loadState(); openMangel(id); }
+  catch(e){ toast(e.message,'error'); }
+}
+function pickInfraFoto(id){
+  if(!requireUser()) return;
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.setAttribute('capture','environment');
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    try{
+      toast('Foto wird verarbeitet…');
+      const dataUrl=await resizeImage(file,1600,0.82);
+      await api('/infrastruktur/'+id+'/fotos',{method:'POST',body:JSON.stringify({dataUrl,hochgeladenVon:Me.team+' – '+Me.name})});
+      await loadState(); toast('Foto gespeichert','success'); openMangel(id);
+    }catch(e){ toast(e.message||'Upload fehlgeschlagen','error'); }
+  };
+  inp.click();
+}
+async function deleteInfraFoto(id,fid){
+  if(!confirm('Dieses Foto löschen?')) return;
+  try{ await api('/infrastruktur/'+id+'/fotos/'+fid,{method:'DELETE'}); await loadState(); toast('Foto gelöscht','success'); openMangel(id); }
+  catch(e){ toast(e.message,'error'); }
 }
 function ausrBadge(a){ const x=AUSREICHEND[a]; return x?`<span class="badge ${x.badge}">${x.label}</span>`:''; }
 function msgBubble(n,clickable){
@@ -541,7 +627,7 @@ function msgBubble(n,clickable){
 // ════════════════════════════════════════════════════════════════════════════
 let infraFilter='alle';
 function renderInfrastruktur(content, actions){
-  actions.innerHTML = `<button class="btn btn-primary" onclick="openInfraModal()">+ Infrastruktur</button>`;
+  actions.innerHTML = `<button class="btn btn-secondary" onclick="openExportModal()">⬇️ Export</button><button class="btn btn-primary" onclick="openInfraModal()">+ Infrastruktur</button>`;
   const filters=[['alle','Alle'],['offen','Nur offen'],['kritisch','Kritisch'],['handlungsbedarf','Handlungsbedarf'],['provisorisch','Provisorisch'],['ok','OK'],['erledigt','Erledigt']];
   const list = State.infrastruktur.filter(i=>{
       if(infraFilter==='alle') return true;
@@ -586,6 +672,7 @@ function renderBedarf(content){
   const cities=Object.keys(byCity).sort((a,b)=>a.localeCompare(b,'de'));
   const totalNeed = items.filter(i=>i.benoetigt).length;
   content.innerHTML = `
+    <div class="toolbar"><div class="spacer"></div><button class="btn btn-secondary btn-sm" onclick="openExportModal()">⬇️ Mängelbericht exportieren</button></div>
     <div class="metrics-grid">
       <div class="metric-card"><div class="metric-label">Studios mit Bedarf</div><div class="metric-value">${items.length}</div><div class="metric-sub">Problem/Maßnahme offen</div></div>
       <div class="metric-card"><div class="metric-label">Konkreter Bedarf</div><div class="metric-value">${totalNeed}</div><div class="metric-sub">Geräte/Maßnahmen</div></div>
@@ -595,7 +682,7 @@ function renderBedarf(content){
     ${cities.length? cities.map(c=>{
       const arr=byCity[c].slice().sort((a,b)=>rank(b.status)-rank(a.status));
       return `<div class="card">
-        <div class="card-header"><span class="card-title">📍 ${esc(c)}</span><span class="badge badge-gray">${arr.length} Studio(s)</span></div>
+        <div class="card-header"><span class="card-title">📍 ${esc(c)}</span><div style="display:flex;gap:8px;align-items:center"><button class="btn-ghost" onclick="exportReport('excel','${encodeURIComponent(c)}')" title="Excel für ${esc(c)}">📊 Excel</button><button class="btn-ghost" onclick="exportReport('pdf','${encodeURIComponent(c)}')" title="PDF für ${esc(c)}">📄 PDF</button><span class="badge badge-gray">${arr.length} Studio(s)</span></div></div>
         <div class="table-wrap"><table>
           <thead><tr><th>Studio</th><th>Status</th><th>Reicht aus?</th><th>Benötigt</th><th>Grund / Anmerkung</th><th></th></tr></thead>
           <tbody>${arr.map(i=>{const st=studioById(i.studioId);const s=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
@@ -901,6 +988,30 @@ function openLightbox(src,cap){
   document.getElementById('lightbox').classList.add('open');
 }
 function closeLightbox(){ const lb=document.getElementById('lightbox'); lb.classList.remove('open'); document.getElementById('lightboxImg').src=''; }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  EXPORT (Mängelbericht Excel / PDF)
+// ════════════════════════════════════════════════════════════════════════════
+function openExportModal(){
+  const cities=[...new Set(State.studios.map(s=>s.standort).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
+  const body=`
+    <div class="form-row"><label>Standort</label><select id="ex_standort"><option value="">Alle Standorte</option>${cities.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
+    <p style="font-size:12.5px;color:var(--gray-400)">Erzeugt einen Mängelbericht mit Status, Bearbeitung, Zuständigkeit, Bedarf und Anzahl Fotos/Kommentaren.</p>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="exportFromModal('excel')">📊 Als Excel</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="exportFromModal('pdf')">📄 Als PDF</button>
+    </div>`;
+  openModal('⬇️ Mängelbericht exportieren', body, [{label:'Schließen',cls:'btn-secondary',fn:closeModal}]);
+}
+function exportFromModal(fmt){
+  const standort=document.getElementById('ex_standort').value;
+  exportReport(fmt, encodeURIComponent(standort));
+}
+function exportReport(fmt, standortEnc){
+  const url='/api/export/'+(fmt==='pdf'?'pdf':'excel')+'?standort='+(standortEnc||'');
+  window.open(url,'_blank');
+  toast('Export wird erstellt…','success');
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 //  INIT
