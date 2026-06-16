@@ -276,9 +276,12 @@ const Modules = [
   { key:'dashboard', label:'Dashboard', icon:'📊', section:'Übersicht', render:renderDashboard },
   { key:'studios', label:'Studios', icon:'🏢', section:'Übersicht', render:renderStudios },
   { key:'infrastruktur', label:'Infrastruktur', icon:'🔧', section:'Übersicht', render:renderInfrastruktur },
+  { key:'bedarf', label:'Bedarfsübersicht', icon:'📋', section:'Übersicht', render:renderBedarf },
   { key:'kommunikation', label:'Kommunikation', icon:'💬', section:'Austausch', render:renderKommunikation },
   { key:'tools', label:'Tools verwalten', icon:'🧩', section:'Erweitern', render:renderTools }
 ];
+
+function rank(status){ return {kritisch:4,handlungsbedarf:3,provisorisch:2,ok:1}[status]||0; }
 
 function buildNav(){
   const nav = document.getElementById('nav');
@@ -326,31 +329,32 @@ function navigate(key){
 // ════════════════════════════════════════════════════════════════════════════
 function renderDashboard(content){
   const s = State.studios;
-  const aktiv = s.filter(x=>x.status==='aktiv').length;
-  const geplant = s.filter(x=>x.status==='geplant'||x.status==='in_bau').length;
+  const staedte = new Set(s.map(x=>x.standort).filter(Boolean)).size;
   const offen = State.infrastruktur.filter(i=>i.status==='handlungsbedarf'||i.status==='kritisch'||i.ausreichend==='nein').length;
-  const provisorisch = State.infrastruktur.filter(i=>i.status==='provisorisch').length;
+  const kritisch = State.infrastruktur.filter(i=>i.status==='kritisch').length;
+  const bedarf = State.infrastruktur.filter(i=>i.benoetigt).length;
 
   const letzteNachrichten = [...State.nachrichten].sort((a,b)=>new Date(b.erstelltAm)-new Date(a.erstelltAm)).slice(0,6);
   const handlungspunkte = State.infrastruktur
     .filter(i=>i.status==='handlungsbedarf'||i.status==='kritisch'||i.ausreichend==='nein')
-    .sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm)).slice(0,6);
+    .sort((a,b)=>rank(b.status)-rank(a.status)).slice(0,8);
 
   content.innerHTML = `
     <div class="metrics-grid">
-      <div class="metric-card"><div class="metric-label">Aktive Studios</div><div class="metric-value">${aktiv}</div><div class="metric-sub">${s.length} gesamt</div></div>
-      <div class="metric-card"><div class="metric-label">Geplant / im Bau</div><div class="metric-value">${geplant}</div><div class="metric-sub">in Vorbereitung</div></div>
-      <div class="metric-card"><div class="metric-label">Provisorisch</div><div class="metric-value">${provisorisch}</div><div class="metric-sub">z.B. Ductape-Lösung</div></div>
+      <div class="metric-card"><div class="metric-label">Studios</div><div class="metric-value">${s.length}</div><div class="metric-sub">${staedte} Standorte</div></div>
+      <div class="metric-card"><div class="metric-label">Konkreter Bedarf</div><div class="metric-value">${bedarf}</div><div class="metric-sub">Geräte/Maßnahmen</div></div>
       <div class="metric-card"><div class="metric-label">Handlungsbedarf</div><div class="metric-value">${offen}</div><div class="metric-sub">reicht nicht aus</div></div>
+      <div class="metric-card"><div class="metric-label">Kritisch</div><div class="metric-value">${kritisch}</div><div class="metric-sub">dringend</div></div>
     </div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-header"><span class="card-title">⚠️ Offene Punkte</span><button class="btn btn-secondary btn-sm" onclick="navigate('infrastruktur')">Alle ansehen</button></div>
+        <div class="card-header"><span class="card-title">⚠️ Dringendste Punkte</span><button class="btn btn-secondary btn-sm" onclick="navigate('bedarf')">Bedarfsübersicht</button></div>
         <div class="card-body">${handlungspunkte.length? handlungspunkte.map(i=>{
           const st=studioById(i.studioId);
           return `<div class="infra-item s-${i.status}" style="cursor:pointer" onclick="openStudio('${i.studioId}')">
-            <div class="infra-head"><h4>${esc(i.titel)}</h4>${ausrBadge(i.ausreichend)}</div>
-            <div class="infra-foot"><span class="badge badge-gray">${esc(i.kategorie)}</span><b>${esc(st?st.name:'—')}</b></div>
+            <div class="infra-head"><h4>${esc(st?st.standort+' · '+st.name:i.titel)}</h4>${ausrBadge(i.ausreichend)}</div>
+            ${i.benoetigt?`<div class="infra-desc"><b>Benötigt:</b> ${esc(i.benoetigt)}</div>`:''}
+            <div class="infra-foot"><span class="badge ${(INFRA_STATUS[i.status]||{}).badge||'badge-gray'}">${(INFRA_STATUS[i.status]||{}).label||i.status}</span></div>
           </div>`;}).join('') : emptyState('Keine offenen Punkte 🎉')}</div>
       </div>
       <div class="card">
@@ -369,35 +373,48 @@ function renderDashboard(content){
 //  STUDIOS
 // ════════════════════════════════════════════════════════════════════════════
 let studioFilter='alle';
+let studioSearch='';
 function renderStudios(content, actions){
   actions.innerHTML = `<button class="btn btn-primary" onclick="openStudioModal()">+ Studio</button>`;
   const filters = ['alle','geplant','in_bau','aktiv','geschlossen'];
+  const q = studioSearch.trim().toLowerCase();
   const list = State.studios.filter(s=>studioFilter==='alle'||s.status===studioFilter)
-    .sort((a,b)=>a.name.localeCompare(b.name,'de'));
+    .filter(s=> !q || (`${s.name} ${s.standort}`).toLowerCase().includes(q));
+  const byCity={}; list.forEach(s=>{ const c=s.standort||'—'; (byCity[c]=byCity[c]||[]).push(s); });
+  const cities=Object.keys(byCity).sort((a,b)=>a.localeCompare(b,'de'));
   content.innerHTML = `
     <div class="toolbar">
       <div class="chip-filter">${filters.map(f=>`<button class="${studioFilter===f?'active':''}" onclick="setStudioFilter('${f}')">${f==='alle'?'Alle':(STUDIO_STATUS[f]?.label||f)}</button>`).join('')}</div>
+      <input type="search" id="studioSearch" placeholder="🔍 Studio oder Standort..." value="${esc(studioSearch)}" oninput="onStudioSearch(this.value)" style="max-width:260px">
+      <div class="spacer"></div>
+      <span class="badge badge-gray">${list.length} Studios · ${cities.length} Standorte</span>
     </div>
-    <div class="studio-grid">${list.length? list.map(studioCard).join('') : emptyState('Keine Studios in dieser Ansicht')}</div>`;
+    ${cities.length? cities.map(c=>`
+      <div class="section-title">📍 ${esc(c)} <span style="color:var(--gray-400)">(${byCity[c].length})</span></div>
+      <div class="studio-grid">${byCity[c].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(studioCard).join('')}</div>
+    `).join('') : emptyState('Keine Studios in dieser Ansicht')}`;
+  const si=document.getElementById('studioSearch'); if(si && q){ si.focus(); si.setSelectionRange(si.value.length,si.value.length); }
 }
+function onStudioSearch(v){ studioSearch=v; renderStudios(document.getElementById('content'), document.getElementById('topbarActions')); }
 function setStudioFilter(f){ studioFilter=f; renderStudios(document.getElementById('content'), document.getElementById('topbarActions')); }
 function studioCard(s){
   const infra = State.infrastruktur.filter(i=>i.studioId===s.id);
   const offen = infra.filter(i=>i.status==='handlungsbedarf'||i.status==='kritisch'||i.ausreichend==='nein').length;
   const prov = infra.filter(i=>i.status==='provisorisch').length;
+  const krit = infra.filter(i=>i.status==='kritisch').length;
   const st = STUDIO_STATUS[s.status]||{label:s.status,badge:'badge-gray'};
   return `<div class="studio-card st-${esc(s.status)}" onclick="openStudio('${s.id}')">
     <h3>${esc(s.name)} <span class="badge ${st.badge}">${st.label}</span></h3>
     <div class="loc">📍 ${esc(s.standort||'—')}</div>
     <div class="studio-meta">
-      <span><b>Eröffnung:</b> ${fmtD(s.eroeffnung)}</span>
-      <span><b>Immo:</b> ${esc(s.verantwortlichImmo||'—')}</span>
+      <span><b>feste Klima:</b> ${esc(s.festeKlima||'—')}</span>
       <span><b>DLS:</b> ${esc(s.verantwortlichDls||'—')}</span>
     </div>
     <div class="studio-stats">
-      <span class="badge badge-gray">${infra.length} Infrastruktur</span>
+      ${krit?`<span class="badge badge-red">${krit} kritisch</span>`:''}
       ${prov?`<span class="badge badge-yellow">${prov} provisorisch</span>`:''}
-      ${offen?`<span class="badge badge-red">${offen} offen</span>`:''}
+      ${(offen-krit)>0?`<span class="badge badge-purple">${offen-krit} Handlungsbedarf</span>`:''}
+      ${offen===0&&prov===0?`<span class="badge badge-green">unkritisch</span>`:''}
     </div>
   </div>`;
 }
@@ -411,10 +428,10 @@ function openStudio(id){
   const body = `
     <div class="detail-row"><div class="detail-label">Status</div><div><span class="badge ${st.badge}">${st.label}</span></div></div>
     <div class="detail-row"><div class="detail-label">Standort</div><div>${esc(s.standort||'—')}</div></div>
-    <div class="detail-row"><div class="detail-label">Adresse</div><div>${esc(s.adresse||'—')}</div></div>
-    <div class="detail-row"><div class="detail-label">Eröffnung</div><div>${fmtD(s.eroeffnung)}</div></div>
+    <div class="detail-row"><div class="detail-label">Feste Klimatisierung</div><div>${esc(s.festeKlima||'—')}</div></div>
+    ${s.adresse?`<div class="detail-row"><div class="detail-label">Adresse</div><div>${esc(s.adresse)}</div></div>`:''}
     <div class="detail-row"><div class="detail-label">Verantwortlich Immo</div><div>${esc(s.verantwortlichImmo||'—')}</div></div>
-    <div class="detail-row"><div class="detail-label">Verantwortlich DLS</div><div>${esc(s.verantwortlichDls||'—')}</div></div>
+    <div class="detail-row"><div class="detail-label">Rückmeldende Person (DLS)</div><div>${esc(s.verantwortlichDls||'—')}</div></div>
     ${s.notizen?`<div class="detail-row"><div class="detail-label">Notizen</div><div>${esc(s.notizen)}</div></div>`:''}
 
     <div class="section-title">🔧 Infrastruktur (${infra.length})</div>
@@ -450,10 +467,13 @@ function infraItem(i){
       </div>
     </div>
     ${i.beschreibung?`<div class="infra-desc">${esc(i.beschreibung)}</div>`:''}
+    ${i.vorhandeneGeraete?`<div class="infra-desc"><b>Vorhanden:</b> ${esc(i.vorhandeneGeraete)}</div>`:''}
+    ${i.benoetigt?`<div class="infra-desc" style="background:var(--yellow-bg);border-radius:8px;padding:8px 10px"><b>Benötigt:</b> ${esc(i.benoetigt)}</div>`:''}
     <div class="infra-foot">
       <span class="badge badge-gray">${esc(i.kategorie)}</span>
       <span class="badge ${st.badge}">${st.label}</span>
       ${ausrBadge(i.ausreichend)}
+      ${i.hitzekritisch==='ja'?'<span class="badge badge-red">hitzekritisch</span>':''}
       <span style="margin-left:auto">${esc(i.erstelltVon||'')} · ${fmtDT(i.geaendertAm)}</span>
     </div>
   </div>`;
@@ -472,24 +492,23 @@ function msgBubble(n){
 let infraFilter='alle';
 function renderInfrastruktur(content, actions){
   actions.innerHTML = `<button class="btn btn-primary" onclick="openInfraModal()">+ Infrastruktur</button>`;
-  const filters=[['alle','Alle'],['provisorisch','Provisorisch'],['handlungsbedarf','Handlungsbedarf'],['kritisch','Kritisch'],['ok','OK']];
+  const filters=[['alle','Alle'],['kritisch','Kritisch'],['handlungsbedarf','Handlungsbedarf'],['provisorisch','Provisorisch'],['ok','OK']];
   const list = State.infrastruktur.filter(i=>infraFilter==='alle'||i.status===infraFilter)
-    .sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm));
+    .sort((a,b)=> rank(b.status)-rank(a.status) || (studioById(a.studioId)?.standort||'').localeCompare(studioById(b.studioId)?.standort||'','de'));
   content.innerHTML = `
-    <div class="toolbar"><div class="chip-filter">${filters.map(([f,l])=>`<button class="${infraFilter===f?'active':''}" onclick="setInfraFilter('${f}')">${l}</button>`).join('')}</div></div>
+    <div class="toolbar"><div class="chip-filter">${filters.map(([f,l])=>`<button class="${infraFilter===f?'active':''}" onclick="setInfraFilter('${f}')">${l}</button>`).join('')}</div><div class="spacer"></div><span class="badge badge-gray">${list.length} Einträge</span></div>
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Studio</th><th>Kategorie</th><th>Titel</th><th>Status</th><th>Reicht aus?</th><th>Aktualisiert</th><th></th></tr></thead>
+      <thead><tr><th>Standort</th><th>Studio</th><th>Status</th><th>Reicht aus?</th><th>Benötigt</th><th></th></tr></thead>
       <tbody>${list.length? list.map(i=>{
         const st=studioById(i.studioId); const s=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
         return `<tr>
-          <td><b>${esc(st?st.name:'—')}</b></td>
-          <td><span class="badge badge-gray">${esc(i.kategorie)}</span></td>
-          <td>${esc(i.titel)}</td>
+          <td><b>${esc(st?st.standort:'—')}</b></td>
+          <td>${esc(st?st.name:'—')}</td>
           <td><span class="badge ${s.badge}">${s.label}</span></td>
           <td>${ausrBadge(i.ausreichend)||'—'}</td>
-          <td style="color:var(--gray-400)">${fmtDT(i.geaendertAm)}</td>
-          <td style="white-space:nowrap"><button class="btn-ghost" onclick="openInfraModal('${i.id}')">✏️</button><button class="btn-ghost" onclick="deleteInfra('${i.id}')">🗑️</button></td>
-        </tr>`;}).join('') : `<tr><td colspan="7">${emptyState('Keine Einträge')}</td></tr>`}</tbody>
+          <td style="max-width:420px">${esc(i.benoetigt||'—')}</td>
+          <td style="white-space:nowrap"><button class="btn-ghost" onclick="openStudio('${i.studioId}')" title="Details">🔍</button><button class="btn-ghost" onclick="openInfraModal('${i.id}')">✏️</button><button class="btn-ghost" onclick="deleteInfra('${i.id}')">🗑️</button></td>
+        </tr>`;}).join('') : `<tr><td colspan="6">${emptyState('Keine Einträge')}</td></tr>`}</tbody>
     </table></div></div>`;
 }
 function setInfraFilter(f){ infraFilter=f; renderInfrastruktur(document.getElementById('content'), document.getElementById('topbarActions')); }
@@ -500,7 +519,39 @@ async function deleteInfra(id){
   if(State.currentStudio && document.getElementById('overlay').classList.contains('open')) openStudio(State.currentStudio);
   else navigate(State.current);
 }
-
+// ════════════════════════════════════════════════════════════════════════════════
+//  BEDARFSÜBERSICHT – wo welche Probleme & was wird benötigt
+// ════════════════════════════════════════════════════════════════════════════════
+function renderBedarf(content){
+  const items = State.infrastruktur.filter(i=>i.benoetigt || i.status!=='ok');
+  const byCity={}; items.forEach(i=>{ const st=studioById(i.studioId); const c=st?st.standort:'—'; (byCity[c]=byCity[c]||[]).push(i); });
+  const cities=Object.keys(byCity).sort((a,b)=>a.localeCompare(b,'de'));
+  const totalNeed = items.filter(i=>i.benoetigt).length;
+  content.innerHTML = `
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-label">Studios mit Bedarf</div><div class="metric-value">${items.length}</div><div class="metric-sub">Problem/Maßnahme offen</div></div>
+      <div class="metric-card"><div class="metric-label">Konkreter Bedarf</div><div class="metric-value">${totalNeed}</div><div class="metric-sub">Geräte/Maßnahmen</div></div>
+      <div class="metric-card"><div class="metric-label">Kritisch</div><div class="metric-value">${items.filter(i=>i.status==='kritisch').length}</div></div>
+      <div class="metric-card"><div class="metric-label">Standorte betroffen</div><div class="metric-value">${cities.length}</div></div>
+    </div>
+    ${cities.length? cities.map(c=>{
+      const arr=byCity[c].slice().sort((a,b)=>rank(b.status)-rank(a.status));
+      return `<div class="card">
+        <div class="card-header"><span class="card-title">📍 ${esc(c)}</span><span class="badge badge-gray">${arr.length} Studio(s)</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Studio</th><th>Status</th><th>Reicht aus?</th><th>Benötigt</th><th>Grund / Anmerkung</th></tr></thead>
+          <tbody>${arr.map(i=>{const st=studioById(i.studioId);const s=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
+            return `<tr style="cursor:pointer" onclick="openStudio('${i.studioId}')">
+              <td><b>${esc(st?st.name:'—')}</b></td>
+              <td><span class="badge ${s.badge}">${s.label}</span></td>
+              <td>${ausrBadge(i.ausreichend)||'—'}</td>
+              <td style="max-width:320px">${esc(i.benoetigt||'—')}</td>
+              <td style="max-width:360px;color:var(--gray-600);font-size:12.5px">${esc(i.beschreibung||'')}</td>
+            </tr>`;}).join('')}</tbody>
+        </table></div>
+      </div>`;
+    }).join('') : emptyState('Kein offener Bedarf 🎉')}`;
+}
 // ════════════════════════════════════════════════════════════════════════════
 //  KOMMUNIKATION
 // ════════════════════════════════════════════════════════════════════════════
@@ -638,7 +689,9 @@ function openInfraModal(id, studioIdPreset){
     <div class="form-grid">
       <div class="form-row"><label>Status</label><select id="i_status">${Object.entries(INFRA_STATUS).map(([k,v])=>`<option value="${k}" ${i.status===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="form-row"><label>Reicht es aus?</label><select id="i_ausr">${Object.entries(AUSREICHEND).map(([k,v])=>`<option value="${k}" ${i.ausreichend===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
-    </div>`;
+    </div>
+    <div class="form-row"><label>Vorhandene Geräte</label><textarea id="i_vorhanden" placeholder="z.B. Klimagerät bestellt, Ventilator geliefert...">${esc(i.vorhandeneGeraete||'')}</textarea></div>
+    <div class="form-row"><label>Benötigt (was wird gebraucht?)</label><textarea id="i_benoetigt" placeholder="z.B. Klimagerät + Ventilator, passender Aufsatz, Fensterabdichtung...">${esc(i.benoetigt||'')}</textarea></div>`;
   openModal(edit?'Infrastruktur bearbeiten':'Infrastruktur erfassen', body, [
     {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
     {label:edit?'Speichern':'Erfassen',cls:'btn-primary',fn:()=>saveInfra(id)}
@@ -648,7 +701,8 @@ async function saveInfra(id){
   if(!requireUser()) return;
   const payload={
     studioId:val('i_studio'),kategorie:val('i_kat'),titel:val('i_titel'),beschreibung:val('i_desc'),
-    status:val('i_status'),ausreichend:val('i_ausr'),erstelltVon:Me.team+' – '+Me.name
+    status:val('i_status'),ausreichend:val('i_ausr'),vorhandeneGeraete:val('i_vorhanden'),benoetigt:val('i_benoetigt'),
+    erstelltVon:Me.team+' – '+Me.name
   };
   if(!payload.titel){ toast('Titel ist erforderlich','error'); return; }
   try{

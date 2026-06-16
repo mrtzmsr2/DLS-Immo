@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "import:klima": "node scripts/import-klima.js"
   },
   "keywords": [
     "dls",
@@ -20,6 +21,9 @@
   "private": true,
   "dependencies": {
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "xlsx": "^0.18.5"
   },
   "engines": {
     "node": ">=18"

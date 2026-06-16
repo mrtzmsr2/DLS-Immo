@@ -6,10 +6,22 @@ Studios gemeinsam aktuell halten – im Look der FOM-/Immobilienmanagement-Progr
 
 ## Was kann es?
 
-- **Studio-Übersicht** – geplante, im Bau befindliche und aktive Studios auf einen Blick (mit Status-Filter).
-- **Infrastruktur-Status je Studio** – z. B. „Mobiles Klimagerät: Abluftschlauch nur mit Ductape fixiert, ohne Abluftfolie" inkl. Bewertung **Reicht es aus?** (ja / vorerst / nein) und Status (OK / provisorisch / Handlungsbedarf / kritisch).
+- **Studio-Übersicht** – alle Studios, nach **Standort gruppiert** und durchsuchbar (mit Status-Filter).
+- **Infrastruktur-Status je Studio** – z. B. „Klimagerät: Abluftschlauch nur mit Ductape fixiert, ohne Abluftfolie" inkl. **vorhandene Geräte**, **was benötigt wird**, Bewertung **Reicht es aus?** (ja / vorerst / nein) und Status (OK / provisorisch / Handlungsbedarf / kritisch).
+- **Bedarfsübersicht** – pro Standort: wo welche Probleme bestehen und **was genau wo benötigt wird**.
 - **Kommunikation** – gemeinsamer Meldungs-Verlauf zwischen beiden Teams, optional einem Studio zugeordnet, „Wichtig"-Markierung.
-- **Dashboard** – Kennzahlen, offene Punkte und letzte Meldungen.
+- **Dashboard** – Kennzahlen, dringendste Punkte und letzte Meldungen.
+
+## Daten-Import (Excel)
+
+Die Klimatisierungs-Erhebung wird per Skript eingelesen und erzeugt Studios + Infrastruktur:
+
+```powershell
+npm install            # inkl. devDependency xlsx
+npm run import:klima -- "C:\Pfad\zur\Erhebung.xlsx"
+```
+
+Erwartete Spalten: Standort · Name Studio · feste Klimatisierung · Hitzekritisch? · Grund · Rückmeldende Person · Anmerkungen · Vorhandene Geräte · Bedarf · Bearbeitungsstand. Status und „Reicht es aus?" werden automatisch abgeleitet.
 - **Erweiterbar** – eigene Tools/Module können über die UI angelegt und aktiviert werden; tiefere Logik lässt sich im Code (`Modules` in `public/index.html` bzw. neue API-Route in `server.js`) ergänzen. Wie MS Teams, nur selbst weiter-codierbar.
 
 Alle Daten liegen serverseitig in einer geteilten JSON-Datei, sodass mehrere Personen
