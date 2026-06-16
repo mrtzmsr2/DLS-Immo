@@ -1,0 +1,114 @@
+{
+  "studios": [
+    {
+      "id": "std_seed1",
+      "name": "Studio 1",
+      "standort": "Köln-Ehrenfeld",
+      "adresse": "Venloer Str. 120, 50823 Köln",
+      "status": "aktiv",
+      "eroeffnung": "2024-09-01",
+      "verantwortlichImmo": "M. Moser",
+      "verantwortlichDls": "T. Berger",
+      "notizen": "Pilotstandort, voll ausgestattet.",
+      "erstelltAm": "2024-08-01T08:00:00.000Z",
+      "geaendertAm": "2025-02-10T08:00:00.000Z"
+    },
+    {
+      "id": "std_seed2",
+      "name": "Studio 2",
+      "standort": "Düsseldorf-Bilk",
+      "adresse": "Friedrichstr. 45, 40217 Düsseldorf",
+      "status": "in_bau",
+      "eroeffnung": "2026-08-15",
+      "verantwortlichImmo": "M. Moser",
+      "verantwortlichDls": "S. Klein",
+      "notizen": "Trockenbau läuft, Technik-Anlieferung KW 30.",
+      "erstelltAm": "2025-11-01T08:00:00.000Z",
+      "geaendertAm": "2026-05-20T08:00:00.000Z"
+    },
+    {
+      "id": "std_seed3",
+      "name": "Studio 3",
+      "standort": "Essen-Rüttenscheid",
+      "adresse": "Rüttenscheider Str. 200, 45131 Essen",
+      "status": "geplant",
+      "eroeffnung": "2027-01-10",
+      "verantwortlichImmo": "M. Moser",
+      "verantwortlichDls": "offen",
+      "notizen": "Mietvertrag in Verhandlung.",
+      "erstelltAm": "2026-03-15T08:00:00.000Z",
+      "geaendertAm": "2026-06-01T08:00:00.000Z"
+    }
+  ],
+  "infrastruktur": [
+    {
+      "id": "inf_seed1",
+      "studioId": "std_seed1",
+      "kategorie": "Klima",
+      "titel": "Mobiles Klimagerät Trainingsraum",
+      "beschreibung": "Abluftschlauch aktuell nur mit Ductape am Fensterspalt fixiert, OHNE Abluftfolie/Fensterkit. Hält dicht, aber provisorisch.",
+      "status": "provisorisch",
+      "ausreichend": "ja_vorerst",
+      "erstelltVon": "DLS – T. Berger",
+      "erstelltAm": "2026-06-10T09:30:00.000Z",
+      "geaendertAm": "2026-06-10T09:30:00.000Z"
+    },
+    {
+      "id": "inf_seed2",
+      "studioId": "std_seed1",
+      "kategorie": "Netzwerk",
+      "titel": "WLAN Empfangsbereich",
+      "beschreibung": "Access Point installiert, stabile Abdeckung im gesamten Studio.",
+      "status": "ok",
+      "ausreichend": "ja",
+      "erstelltVon": "Immo – M. Moser",
+      "erstelltAm": "2026-05-02T11:00:00.000Z",
+      "geaendertAm": "2026-05-02T11:00:00.000Z"
+    },
+    {
+      "id": "inf_seed3",
+      "studioId": "std_seed2",
+      "kategorie": "Strom",
+      "titel": "Starkstromanschluss Technikraum",
+      "beschreibung": "Elektriker muss CEE-Dose nachrüsten, aktuell nur Baustrom vorhanden.",
+      "status": "handlungsbedarf",
+      "ausreichend": "nein",
+      "erstelltVon": "DLS – S. Klein",
+      "erstelltAm": "2026-05-18T14:20:00.000Z",
+      "geaendertAm": "2026-05-18T14:20:00.000Z"
+    }
+  ],
+  "nachrichten": [
+    {
+      "id": "msg_seed1",
+      "studioId": "std_seed1",
+      "team": "DLS",
+      "autor": "T. Berger",
+      "text": "Klimagerät im Trainingsraum läuft, Schlauch ist mit Ductape fixiert. Reicht für den Sommer, auf Dauer brauchen wir aber ein richtiges Fensterkit mit Abluftfolie.",
+      "typ": "info",
+      "erstelltAm": "2026-06-10T09:31:00.000Z",
+      "geaendertAm": "2026-06-10T09:31:00.000Z"
+    },
+    {
+      "id": "msg_seed2",
+      "studioId": "std_seed2",
+      "team": "Immo",
+      "autor": "M. Moser",
+      "text": "CEE-Anschluss ist beim Elektriker beauftragt, Termin KW 28. Bitte vorher keine Großgeräte testen.",
+      "typ": "wichtig",
+      "erstelltAm": "2026-05-19T08:05:00.000Z",
+      "geaendertAm": "2026-05-19T08:05:00.000Z"
+    }
+  ],
+  "tools": [
+    {
+      "id": "tool_seed1",
+      "name": "Mängelliste",
+      "icon": "🛠️",
+      "beschreibung": "Offene Punkte & Mängel je Studio erfassen.",
+      "aktiv": false,
+      "erstelltAm": "2026-06-01T08:00:00.000Z",
+      "geaendertAm": "2026-06-01T08:00:00.000Z"
+    }
+  ]
+}

@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DLS ↔ Immomanagement – Studio-Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --fom-primary:#00bfb3;--fom-primary-dark:#008c82;--fom-primary-light:#00d9cc;
+  --fom-gradient:linear-gradient(135deg,#00d9cc 0%,#00bfb3 50%,#008c82 100%);
+  --gray-50:#f5f7f9;--gray-100:#eceff2;--gray-200:#dde2e7;--gray-400:#8b92a0;
+  --gray-600:#5a626d;--gray-800:#2c333b;--white:#fff;
+  --green:#155724;--green-bg:#d4edda;--red:#721c24;--red-bg:#f8d7da;
+  --yellow:#856404;--yellow-bg:#fff3cd;--purple:#5b2a86;--purple-bg:#efe6f7;
+  --blue:#0c5460;--blue-bg:#d1ecf1;
+  --radius:8px;--radius-lg:12px;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.08);--shadow-md:0 4px 16px rgba(0,140,130,.12);
+  --shadow-lg:0 8px 24px rgba(0,140,130,.18);
+  --font:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;
+  --ease:cubic-bezier(.4,0,.2,1);--ease-out:cubic-bezier(.16,1,.3,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--gray-50);color:var(--gray-800);min-height:100vh;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+::selection{background:rgba(0,191,179,.25);color:var(--fom-primary-dark)}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:var(--gray-200);border-radius:8px;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--gray-400);background-clip:content-box}
+:focus-visible{outline:2px solid var(--fom-primary);outline-offset:2px;border-radius:4px}
+.app{display:flex;min-height:100vh}
+
+/* Sidebar */
+.sidebar{width:248px;background:var(--fom-primary);background-image:linear-gradient(180deg,#00c4b8 0%,#00bfb3 40%,#00a89d 100%);display:flex;flex-direction:column;flex-shrink:0;position:fixed;top:0;left:0;height:100vh;z-index:100;box-shadow:2px 0 16px rgba(0,140,130,.1);transition:transform .32s var(--ease-out)}
+.sidebar-logo{padding:20px;border-bottom:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.08)}
+.sidebar-logo h1{font-size:15px;font-weight:800;color:#fff;display:flex;align-items:center;gap:10px;letter-spacing:-.01em}
+.sidebar-logo p{font-size:11px;color:rgba(255,255,255,.65);margin-top:3px}
+.sidebar-nav{padding:12px 0;flex:1;overflow-y:auto}
+.nav-section{font-size:10px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.8px;padding:12px 20px 4px}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 20px;cursor:pointer;color:rgba(255,255,255,.85);font-size:13.5px;border:none;background:none;width:100%;text-align:left;transition:background .2s,color .2s;position:relative;font-family:inherit}
+.nav-item:hover{background:rgba(255,255,255,.14);color:#fff}
+.nav-item.active{background:rgba(255,255,255,.22);color:#fff;font-weight:600}
+.nav-item.active::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.6)}
+.nav-icon{font-size:15px;width:20px;text-align:center}
+.sidebar-bottom{padding:14px 20px;border-top:1px solid rgba(255,255,255,.12)}
+.user-chip{display:flex;align-items:center;gap:10px;cursor:pointer}
+.user-avatar{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.user-name{font-size:13px;color:rgba(255,255,255,.92);font-weight:600}
+.user-role{font-size:11px;color:rgba(255,255,255,.55)}
+
+/* Main */
+.main{margin-left:248px;flex:1;display:flex;flex-direction:column;min-height:100vh;transition:margin-left .3s var(--ease)}
+.topbar{background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--gray-100);padding:0 28px;height:62px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;box-shadow:var(--shadow-sm)}
+.topbar-title{font-size:17px;font-weight:800;color:var(--fom-primary);letter-spacing:-.02em}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.menu-toggle{display:none;background:none;border:none;font-size:22px;color:var(--fom-primary);cursor:pointer;padding:6px 10px;line-height:1}
+.content{padding:28px;flex:1;max-width:1400px;width:100%}
+.scrim{display:none;position:fixed;inset:0;background:rgba(16,32,40,.45);z-index:90;backdrop-filter:blur(2px)}
+.scrim.show{display:block}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:999px;font-size:13.5px;font-weight:600;cursor:pointer;border:none;transition:all .18s;white-space:nowrap;font-family:inherit}
+.btn-primary{background:var(--fom-primary);color:#fff}
+.btn-primary:hover{background:var(--fom-primary-dark);transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.btn-secondary{background:#fff;color:var(--fom-primary);border:2px solid var(--fom-primary)}
+.btn-secondary:hover{background:var(--gray-50)}
+.btn-danger{background:var(--red-bg);color:var(--red)}
+.btn-danger:hover{background:#f5c0c0}
+.btn-sm{padding:5px 13px;font-size:12px}
+.btn-ghost{background:none;border:none;color:var(--gray-400);cursor:pointer;padding:4px 8px;border-radius:6px;font-size:13px;font-family:inherit}
+.btn-ghost:hover{background:var(--gray-100);color:var(--gray-800)}
+
+/* Metrics */
+.metrics-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:24px}
+.metric-card{background:#fff;border-radius:var(--radius-lg);padding:18px 20px;box-shadow:var(--shadow-sm);border:1px solid var(--gray-200);border-top:3px solid var(--fom-primary);transition:all .25s}
+.metric-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px)}
+.metric-label{font-size:11.5px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.metric-value{font-size:30px;font-weight:800;color:var(--fom-primary);line-height:1}
+.metric-sub{font-size:12px;color:var(--gray-400);margin-top:6px}
+
+/* Cards */
+.card{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);border:1px solid var(--gray-200);margin-bottom:20px;overflow:hidden}
+.card-header{padding:16px 22px;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.card-title{font-size:15.5px;font-weight:700;color:var(--fom-primary);letter-spacing:-.01em}
+.card-body{padding:22px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+
+/* Studio cards grid */
+.studio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.studio-card{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);border:1px solid var(--gray-200);padding:20px;cursor:pointer;transition:all .22s;border-left:4px solid var(--gray-200)}
+.studio-card:hover{box-shadow:var(--shadow-md);transform:translateY(-3px)}
+.studio-card.st-aktiv{border-left-color:#28a745}
+.studio-card.st-in_bau{border-left-color:#ffc107}
+.studio-card.st-geplant{border-left-color:#5b8def}
+.studio-card.st-geschlossen{border-left-color:#dc3545}
+.studio-card h3{font-size:17px;font-weight:800;color:var(--gray-800);margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.studio-card .loc{font-size:13px;color:var(--gray-600);margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.studio-meta{display:flex;gap:16px;font-size:12px;color:var(--gray-400);flex-wrap:wrap}
+.studio-meta b{color:var(--gray-600);font-weight:600}
+.studio-stats{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+.badge-blue{background:var(--blue-bg);color:var(--blue)}
+.badge-gray{background:var(--gray-100);color:var(--gray-600)}
+
+/* Tables */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{background:var(--fom-primary);color:#fff;padding:12px 14px;text-align:left;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+tbody td{padding:11px 14px;border-bottom:1px solid var(--gray-100);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr{transition:background .15s}
+tbody tr:hover td{background:rgba(0,191,179,.07)}
+
+/* Infra item */
+.infra-item{border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;border-left:4px solid var(--gray-200);transition:box-shadow .2s}
+.infra-item:hover{box-shadow:var(--shadow-sm)}
+.infra-item.s-ok{border-left-color:#28a745}
+.infra-item.s-provisorisch{border-left-color:#ffc107}
+.infra-item.s-handlungsbedarf{border-left-color:#fd7e14}
+.infra-item.s-kritisch{border-left-color:#dc3545}
+.infra-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}
+.infra-head h4{font-size:14.5px;font-weight:700;color:var(--gray-800)}
+.infra-desc{font-size:13.5px;color:var(--gray-600);margin-bottom:8px}
+.infra-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--gray-400)}
+
+/* Chat / feed */
+.feed{display:flex;flex-direction:column;gap:14px;max-height:62vh;overflow-y:auto;padding-right:6px}
+.msg{display:flex;gap:12px}
+.msg-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
+.msg.team-DLS .msg-avatar{background:linear-gradient(135deg,#5b8def,#3a6fd8)}
+.msg.team-Immo .msg-avatar{background:var(--fom-gradient)}
+.msg-bubble{background:var(--gray-50);border:1px solid var(--gray-100);border-radius:12px;padding:10px 14px;flex:1}
+.msg-meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+.msg-author{font-size:13px;font-weight:700;color:var(--gray-800)}
+.msg-time{font-size:11px;color:var(--gray-400)}
+.msg-text{font-size:13.5px;color:var(--gray-800);white-space:pre-wrap;word-break:break-word}
+.composer{display:flex;gap:10px;margin-top:16px;align-items:flex-end}
+.composer textarea{flex:1;min-height:46px;max-height:160px;resize:vertical}
+
+/* Forms */
+.form-row{margin-bottom:14px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+label{display:block;font-size:12.5px;font-weight:600;color:var(--gray-600);margin-bottom:5px}
+input,select,textarea{width:100%;padding:9px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13.5px;font-family:inherit;color:var(--gray-800);background:#fff;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-primary);box-shadow:0 0 0 3px rgba(0,191,179,.12)}
+
+/* Modal */
+.overlay{display:none;position:fixed;inset:0;background:rgba(16,32,40,.45);z-index:200;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;animation:modalIn .28s var(--ease-out)}
+@keyframes modalIn{from{transform:translateY(16px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:16px;font-weight:700;color:var(--fom-primary)}
+.modal-close{background:none;border:none;font-size:22px;color:var(--gray-400);cursor:pointer;line-height:1}
+.modal-close:hover{color:var(--gray-800)}
+.modal-body{padding:20px 24px}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--gray-100);display:flex;gap:10px;justify-content:flex-end}
+
+/* Misc */
+.page{display:none}.page.active{display:block}
+.empty-state{text-align:center;padding:48px 24px;color:var(--gray-400)}
+.empty-state .eicon{font-size:40px;margin-bottom:12px}
+.toolbar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center}
+.toolbar .spacer{flex:1}
+.chip-filter{display:inline-flex;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:999px;padding:4px}
+.chip-filter button{border:none;background:none;padding:6px 14px;border-radius:999px;font-size:12.5px;font-weight:600;color:var(--gray-600);cursor:pointer;font-family:inherit}
+.chip-filter button.active{background:var(--fom-primary);color:#fff}
+.detail-row{display:flex;padding:10px 0;border-bottom:1px solid var(--gray-100);font-size:13.5px}
+.detail-row:last-child{border-bottom:none}
+.detail-label{width:160px;flex-shrink:0;color:var(--gray-400);font-weight:600}
+.toasts{position:fixed;bottom:24px;right:24px;z-index:500;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--gray-800);color:#fff;padding:12px 18px;border-radius:var(--radius);font-size:13.5px;box-shadow:var(--shadow-md);animation:slideIn .25s ease;max-width:340px}
+.toast.success{background:var(--fom-primary-dark)}.toast.error{background:#a02633}
+@keyframes slideIn{from{transform:translateX(60px);opacity:0}to{transform:none;opacity:1}}
+.section-title{font-size:13px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.6px;margin:20px 0 12px}
+.placeholder-tool{text-align:center;padding:60px 24px;color:var(--gray-400)}
+.placeholder-tool .eicon{font-size:48px;margin-bottom:16px}
+
+@media(max-width:980px){.sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.main{margin-left:0}.menu-toggle{display:inline-flex}.metrics-grid{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
+@media(max-width:600px){.metrics-grid{grid-template-columns:1fr 1fr}.content{padding:16px}.form-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="scrim" id="scrim" onclick="toggleSidebar(false)"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <h1>🏢 DLS ↔ Immo</h1>
+      <p>Studio-Kommunikationsportal</p>
+    </div>
+    <nav class="sidebar-nav" id="nav"></nav>
+    <div class="sidebar-bottom">
+      <div class="user-chip" onclick="openUserModal()" title="Profil wechseln">
+        <div class="user-avatar" id="userAvatar">??</div>
+        <div>
+          <div class="user-name" id="userName">Anmelden</div>
+          <div class="user-role" id="userRole">Team wählen</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+        <div class="topbar-title" id="topbarTitle">Dashboard</div>
+      </div>
+      <div class="topbar-right" id="topbarActions"></div>
+    </header>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  STATE & API
+// ════════════════════════════════════════════════════════════════════════════
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], current:'dashboard', currentStudio:null };
+const Me = {
+  get name(){ return localStorage.getItem('dls_name') || ''; },
+  get team(){ return localStorage.getItem('dls_team') || ''; },
+  set(name,team){ localStorage.setItem('dls_name',name); localStorage.setItem('dls_team',team); }
+};
+
+async function api(path, opts){
+  const res = await fetch('/api'+path, { headers:{'Content-Type':'application/json'}, ...opts });
+  if(!res.ok){ const e = await res.json().catch(()=>({error:res.statusText})); throw new Error(e.error||'Fehler'); }
+  return res.status===204 ? null : res.json();
+}
+async function loadState(){
+  const s = await api('/state');
+  State.studios = s.studios||[]; State.infrastruktur = s.infrastruktur||[];
+  State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[];
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+function esc(s){ const d=document.createElement('div'); d.textContent=s==null?'':String(s); return d.innerHTML; }
+function fmtDT(d){ if(!d) return '—'; return new Date(d).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function fmtD(d){ if(!d) return '—'; return new Date(d).toLocaleDateString('de-DE'); }
+function initials(n){ return (n||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+function toast(msg,type=''){ const d=document.createElement('div'); d.className='toast '+type; d.textContent=msg; document.getElementById('toasts').appendChild(d); setTimeout(()=>d.remove(),3200); }
+function toggleSidebar(force){ const sb=document.getElementById('sidebar'),sc=document.getElementById('scrim'); const open=force===undefined?!sb.classList.contains('open'):force; sb.classList.toggle('open',open); sc.classList.toggle('show',open); }
+
+const STUDIO_STATUS = {
+  geplant:{label:'Geplant',badge:'badge-blue'}, in_bau:{label:'In Bau',badge:'badge-yellow'},
+  aktiv:{label:'Aktiv',badge:'badge-green'}, geschlossen:{label:'Geschlossen',badge:'badge-red'}
+};
+const INFRA_STATUS = {
+  ok:{label:'OK',badge:'badge-green'}, provisorisch:{label:'Provisorisch',badge:'badge-yellow'},
+  handlungsbedarf:{label:'Handlungsbedarf',badge:'badge-purple'}, kritisch:{label:'Kritisch',badge:'badge-red'}
+};
+const AUSREICHEND = {
+  ja:{label:'Reicht aus',badge:'badge-green'}, ja_vorerst:{label:'Reicht vorerst',badge:'badge-yellow'},
+  nein:{label:'Reicht nicht',badge:'badge-red'}
+};
+const INFRA_KATEGORIEN = ['Klima','Strom','Wasser','Netzwerk','Heizung','Sicherheit','Reinigung','Mobiliar','Sonstiges'];
+
+// ════════════════════════════════════════════════════════════════════════════
+//  NAVIGATION (modular – Tools werden hier registriert)
+// ════════════════════════════════════════════════════════════════════════════
+const Modules = [
+  { key:'dashboard', label:'Dashboard', icon:'📊', section:'Übersicht', render:renderDashboard },
+  { key:'studios', label:'Studios', icon:'🏢', section:'Übersicht', render:renderStudios },
+  { key:'infrastruktur', label:'Infrastruktur', icon:'🔧', section:'Übersicht', render:renderInfrastruktur },
+  { key:'kommunikation', label:'Kommunikation', icon:'💬', section:'Austausch', render:renderKommunikation },
+  { key:'tools', label:'Tools verwalten', icon:'🧩', section:'Erweitern', render:renderTools }
+];
+
+function buildNav(){
+  const nav = document.getElementById('nav');
+  const sections = [...new Set(Modules.map(m=>m.section))];
+  // Aktive Custom-Tools als eigene Nav-Einträge.
+  const customTools = State.tools.filter(t=>t.aktiv);
+  let html='';
+  sections.forEach(sec=>{
+    html += `<div class="nav-section">${esc(sec)}</div>`;
+    Modules.filter(m=>m.section===sec).forEach(m=>{
+      html += navBtn(m.key, m.icon, m.label);
+    });
+  });
+  if(customTools.length){
+    html += `<div class="nav-section">Eigene Tools</div>`;
+    customTools.forEach(t=> html += navBtn('tool:'+t.id, t.icon||'🧩', t.name));
+  }
+  nav.innerHTML = html;
+}
+function navBtn(key,icon,label){
+  const active = State.current===key ? ' active':'';
+  return `<button class="nav-item${active}" onclick="navigate('${key}')"><span class="nav-icon">${icon}</span>${esc(label)}</button>`;
+}
+
+function navigate(key){
+  State.current = key;
+  buildNav();
+  toggleSidebar(false);
+  const content = document.getElementById('content');
+  const actions = document.getElementById('topbarActions');
+  actions.innerHTML='';
+  if(key.startsWith('tool:')){
+    const t = State.tools.find(x=>x.id===key.slice(5));
+    document.getElementById('topbarTitle').textContent = t? t.name : 'Tool';
+    renderCustomTool(content, t);
+    return;
+  }
+  const mod = Modules.find(m=>m.key===key) || Modules[0];
+  document.getElementById('topbarTitle').textContent = mod.label;
+  mod.render(content, actions);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════════════════════════════════════
+function renderDashboard(content){
+  const s = State.studios;
+  const aktiv = s.filter(x=>x.status==='aktiv').length;
+  const geplant = s.filter(x=>x.status==='geplant'||x.status==='in_bau').length;
+  const offen = State.infrastruktur.filter(i=>i.status==='handlungsbedarf'||i.status==='kritisch'||i.ausreichend==='nein').length;
+  const provisorisch = State.infrastruktur.filter(i=>i.status==='provisorisch').length;
+
+  const letzteNachrichten = [...State.nachrichten].sort((a,b)=>new Date(b.erstelltAm)-new Date(a.erstelltAm)).slice(0,6);
+  const handlungspunkte = State.infrastruktur
+    .filter(i=>i.status==='handlungsbedarf'||i.status==='kritisch'||i.ausreichend==='nein')
+    .sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm)).slice(0,6);
+
+  content.innerHTML = `
+    <div class="metrics-grid">
+      <div class="metric-card"><div class="metric-label">Aktive Studios</div><div class="metric-value">${aktiv}</div><div class="metric-sub">${s.length} gesamt</div></div>
+      <div class="metric-card"><div class="metric-label">Geplant / im Bau</div><div class="metric-value">${geplant}</div><div class="metric-sub">in Vorbereitung</div></div>
+      <div class="metric-card"><div class="metric-label">Provisorisch</div><div class="metric-value">${provisorisch}</div><div class="metric-sub">z.B. Ductape-Lösung</div></div>
+      <div class="metric-card"><div class="metric-label">Handlungsbedarf</div><div class="metric-value">${offen}</div><div class="metric-sub">reicht nicht aus</div></div>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><span class="card-title">⚠️ Offene Punkte</span><button class="btn btn-secondary btn-sm" onclick="navigate('infrastruktur')">Alle ansehen</button></div>
+        <div class="card-body">${handlungspunkte.length? handlungspunkte.map(i=>{
+          const st=studioById(i.studioId);
+          return `<div class="infra-item s-${i.status}" style="cursor:pointer" onclick="openStudio('${i.studioId}')">
+            <div class="infra-head"><h4>${esc(i.titel)}</h4>${ausrBadge(i.ausreichend)}</div>
+            <div class="infra-foot"><span class="badge badge-gray">${esc(i.kategorie)}</span><b>${esc(st?st.name:'—')}</b></div>
+          </div>`;}).join('') : emptyState('Keine offenen Punkte 🎉')}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">💬 Letzte Meldungen</span><button class="btn btn-secondary btn-sm" onclick="navigate('kommunikation')">Zum Verlauf</button></div>
+        <div class="card-body">${letzteNachrichten.length? letzteNachrichten.map(n=>{
+          const st=studioById(n.studioId);
+          return `<div class="msg team-${esc(n.team)}" style="margin-bottom:14px">
+            <div class="msg-avatar">${initials(n.autor)}</div>
+            <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div></div>
+          </div>`;}).join('') : emptyState('Noch keine Meldungen')}</div>
+      </div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  STUDIOS
+// ════════════════════════════════════════════════════════════════════════════
+let studioFilter='alle';
+function renderStudios(content, actions){
+  actions.innerHTML = `<button class="btn btn-primary" onclick="openStudioModal()">+ Studio</button>`;
+  const filters = ['alle','geplant','in_bau','aktiv','geschlossen'];
+  const list = State.studios.filter(s=>studioFilter==='alle'||s.status===studioFilter)
+    .sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  content.innerHTML = `
+    <div class="toolbar">
+      <div class="chip-filter">${filters.map(f=>`<button class="${studioFilter===f?'active':''}" onclick="setStudioFilter('${f}')">${f==='alle'?'Alle':(STUDIO_STATUS[f]?.label||f)}</button>`).join('')}</div>
+    </div>
+    <div class="studio-grid">${list.length? list.map(studioCard).join('') : emptyState('Keine Studios in dieser Ansicht')}</div>`;
+}
+function setStudioFilter(f){ studioFilter=f; renderStudios(document.getElementById('content'), document.getElementById('topbarActions')); }
+function studioCard(s){
+  const infra = State.infrastruktur.filter(i=>i.studioId===s.id);
+  const offen = infra.filter(i=>i.status==='handlungsbedarf'||i.status==='kritisch'||i.ausreichend==='nein').length;
+  const prov = infra.filter(i=>i.status==='provisorisch').length;
+  const st = STUDIO_STATUS[s.status]||{label:s.status,badge:'badge-gray'};
+  return `<div class="studio-card st-${esc(s.status)}" onclick="openStudio('${s.id}')">
+    <h3>${esc(s.name)} <span class="badge ${st.badge}">${st.label}</span></h3>
+    <div class="loc">📍 ${esc(s.standort||'—')}</div>
+    <div class="studio-meta">
+      <span><b>Eröffnung:</b> ${fmtD(s.eroeffnung)}</span>
+      <span><b>Immo:</b> ${esc(s.verantwortlichImmo||'—')}</span>
+      <span><b>DLS:</b> ${esc(s.verantwortlichDls||'—')}</span>
+    </div>
+    <div class="studio-stats">
+      <span class="badge badge-gray">${infra.length} Infrastruktur</span>
+      ${prov?`<span class="badge badge-yellow">${prov} provisorisch</span>`:''}
+      ${offen?`<span class="badge badge-red">${offen} offen</span>`:''}
+    </div>
+  </div>`;
+}
+
+function openStudio(id){
+  const s = studioById(id); if(!s) return;
+  State.currentStudio = id;
+  const infra = State.infrastruktur.filter(i=>i.studioId===id).sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm));
+  const msgs = State.nachrichten.filter(n=>n.studioId===id).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const st = STUDIO_STATUS[s.status]||{label:s.status,badge:'badge-gray'};
+  const body = `
+    <div class="detail-row"><div class="detail-label">Status</div><div><span class="badge ${st.badge}">${st.label}</span></div></div>
+    <div class="detail-row"><div class="detail-label">Standort</div><div>${esc(s.standort||'—')}</div></div>
+    <div class="detail-row"><div class="detail-label">Adresse</div><div>${esc(s.adresse||'—')}</div></div>
+    <div class="detail-row"><div class="detail-label">Eröffnung</div><div>${fmtD(s.eroeffnung)}</div></div>
+    <div class="detail-row"><div class="detail-label">Verantwortlich Immo</div><div>${esc(s.verantwortlichImmo||'—')}</div></div>
+    <div class="detail-row"><div class="detail-label">Verantwortlich DLS</div><div>${esc(s.verantwortlichDls||'—')}</div></div>
+    ${s.notizen?`<div class="detail-row"><div class="detail-label">Notizen</div><div>${esc(s.notizen)}</div></div>`:''}
+
+    <div class="section-title">🔧 Infrastruktur (${infra.length})</div>
+    <div>${infra.length? infra.map(infraItem).join('') : '<div class="empty-state" style="padding:20px">Noch keine Einträge</div>'}</div>
+    <button class="btn btn-secondary btn-sm" onclick="openInfraModal(null,'${id}')">+ Infrastruktur erfassen</button>
+
+    <div class="section-title">💬 Meldungen (${msgs.length})</div>
+    <div class="feed" style="max-height:none">${msgs.length? msgs.map(msgBubble).join('') : '<div class="empty-state" style="padding:20px">Noch keine Meldungen</div>'}</div>
+    <div class="composer">
+      <textarea id="studioMsg" placeholder="Meldung an das andere Team..."></textarea>
+      <button class="btn btn-primary" onclick="sendStudioMsg('${id}')">Senden</button>
+    </div>`;
+  openModal(`${esc(s.name)} – Details`, body, [
+    {label:'Bearbeiten', cls:'btn-secondary', fn:()=>openStudioModal(s)},
+    {label:'Schließen', cls:'btn-primary', fn:closeModal}
+  ], 'modal-wide');
+}
+async function sendStudioMsg(studioId){
+  if(!requireUser()) return;
+  const ta = document.getElementById('studioMsg'); const text=ta.value.trim();
+  if(!text) return;
+  await api('/nachrichten',{method:'POST',body:JSON.stringify({studioId,text,team:Me.team,autor:Me.name,typ:'info'})});
+  await loadState(); toast('Meldung gesendet','success'); openStudio(studioId);
+}
+
+function infraItem(i){
+  const st=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
+  return `<div class="infra-item s-${esc(i.status)}">
+    <div class="infra-head"><h4>${esc(i.titel)}</h4>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-ghost" onclick="openInfraModal('${i.id}')" title="Bearbeiten">✏️</button>
+        <button class="btn-ghost" onclick="deleteInfra('${i.id}')" title="Löschen">🗑️</button>
+      </div>
+    </div>
+    ${i.beschreibung?`<div class="infra-desc">${esc(i.beschreibung)}</div>`:''}
+    <div class="infra-foot">
+      <span class="badge badge-gray">${esc(i.kategorie)}</span>
+      <span class="badge ${st.badge}">${st.label}</span>
+      ${ausrBadge(i.ausreichend)}
+      <span style="margin-left:auto">${esc(i.erstelltVon||'')} · ${fmtDT(i.geaendertAm)}</span>
+    </div>
+  </div>`;
+}
+function ausrBadge(a){ const x=AUSREICHEND[a]; return x?`<span class="badge ${x.badge}">${x.label}</span>`:''; }
+function msgBubble(n){
+  return `<div class="msg team-${esc(n.team)}">
+    <div class="msg-avatar">${initials(n.autor)}</div>
+    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div></div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INFRASTRUKTUR (global)
+// ════════════════════════════════════════════════════════════════════════════
+let infraFilter='alle';
+function renderInfrastruktur(content, actions){
+  actions.innerHTML = `<button class="btn btn-primary" onclick="openInfraModal()">+ Infrastruktur</button>`;
+  const filters=[['alle','Alle'],['provisorisch','Provisorisch'],['handlungsbedarf','Handlungsbedarf'],['kritisch','Kritisch'],['ok','OK']];
+  const list = State.infrastruktur.filter(i=>infraFilter==='alle'||i.status===infraFilter)
+    .sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm));
+  content.innerHTML = `
+    <div class="toolbar"><div class="chip-filter">${filters.map(([f,l])=>`<button class="${infraFilter===f?'active':''}" onclick="setInfraFilter('${f}')">${l}</button>`).join('')}</div></div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Studio</th><th>Kategorie</th><th>Titel</th><th>Status</th><th>Reicht aus?</th><th>Aktualisiert</th><th></th></tr></thead>
+      <tbody>${list.length? list.map(i=>{
+        const st=studioById(i.studioId); const s=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
+        return `<tr>
+          <td><b>${esc(st?st.name:'—')}</b></td>
+          <td><span class="badge badge-gray">${esc(i.kategorie)}</span></td>
+          <td>${esc(i.titel)}</td>
+          <td><span class="badge ${s.badge}">${s.label}</span></td>
+          <td>${ausrBadge(i.ausreichend)||'—'}</td>
+          <td style="color:var(--gray-400)">${fmtDT(i.geaendertAm)}</td>
+          <td style="white-space:nowrap"><button class="btn-ghost" onclick="openInfraModal('${i.id}')">✏️</button><button class="btn-ghost" onclick="deleteInfra('${i.id}')">🗑️</button></td>
+        </tr>`;}).join('') : `<tr><td colspan="7">${emptyState('Keine Einträge')}</td></tr>`}</tbody>
+    </table></div></div>`;
+}
+function setInfraFilter(f){ infraFilter=f; renderInfrastruktur(document.getElementById('content'), document.getElementById('topbarActions')); }
+async function deleteInfra(id){
+  if(!confirm('Diesen Infrastruktur-Eintrag löschen?')) return;
+  await api('/infrastruktur/'+id,{method:'DELETE'});
+  await loadState(); toast('Gelöscht','success');
+  if(State.currentStudio && document.getElementById('overlay').classList.contains('open')) openStudio(State.currentStudio);
+  else navigate(State.current);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  KOMMUNIKATION
+// ════════════════════════════════════════════════════════════════════════════
+function renderKommunikation(content){
+  const msgs = [...State.nachrichten].sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  content.innerHTML = `
+    <div class="card">
+      <div class="card-header"><span class="card-title">💬 Gemeinsamer Verlauf</span><span class="badge badge-gray">${msgs.length} Meldungen</span></div>
+      <div class="card-body">
+        <div class="feed" id="feed">${msgs.length? msgs.map(n=>{
+          const st=studioById(n.studioId);
+          return `<div class="msg team-${esc(n.team)}"><div class="msg-avatar">${initials(n.autor)}</div>
+            <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div></div></div>`;
+        }).join('') : emptyState('Noch keine Meldungen – starte die Kommunikation!')}</div>
+        <div class="composer">
+          <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+            <div style="display:flex;gap:8px">
+              <select id="komStudio" style="max-width:200px"><option value="">Allgemein (kein Studio)</option>${State.studios.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+              <select id="komTyp" style="max-width:150px"><option value="info">Info</option><option value="wichtig">Wichtig</option></select>
+            </div>
+            <textarea id="komText" placeholder="Nachricht an das andere Team..."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendKom()">Senden</button>
+        </div>
+      </div>
+    </div>`;
+  const feed=document.getElementById('feed'); if(feed) feed.scrollTop=feed.scrollHeight;
+}
+async function sendKom(){
+  if(!requireUser()) return;
+  const text=document.getElementById('komText').value.trim(); if(!text) return;
+  const studioId=document.getElementById('komStudio').value||null;
+  const typ=document.getElementById('komTyp').value;
+  await api('/nachrichten',{method:'POST',body:JSON.stringify({text,studioId,typ,team:Me.team,autor:Me.name})});
+  await loadState(); toast('Gesendet','success'); renderKommunikation(document.getElementById('content'));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  TOOLS (Erweiterbarkeit)
+// ════════════════════════════════════════════════════════════════════════════
+function renderTools(content, actions){
+  actions.innerHTML = `<button class="btn btn-primary" onclick="openToolModal()">+ Tool</button>`;
+  content.innerHTML = `
+    <div class="card"><div class="card-body">
+      <p style="color:var(--gray-600);margin-bottom:8px">Das Portal ist modular. Eigene Tools tauchen aktiviert direkt in der Seitenleiste auf. Komplexere Tools können im Code unter <b>Modules</b> in <code>public/index.html</code> bzw. als eigene API-Route ergänzt werden.</p>
+    </div></div>
+    <div class="studio-grid">${State.tools.length? State.tools.map(toolCard).join('') : emptyState('Noch keine eigenen Tools')}</div>`;
+}
+function toolCard(t){
+  return `<div class="studio-card" style="cursor:default;border-left-color:${t.aktiv?'#28a745':'var(--gray-200)'}">
+    <h3>${t.icon||'🧩'} ${esc(t.name)} <span class="badge ${t.aktiv?'badge-green':'badge-gray'}">${t.aktiv?'Aktiv':'Inaktiv'}</span></h3>
+    <div class="infra-desc">${esc(t.beschreibung||'')}</div>
+    <div class="studio-stats">
+      <button class="btn btn-secondary btn-sm" onclick="openToolModal('${t.id}')">Bearbeiten</button>
+      <button class="btn ${t.aktiv?'btn-danger':'btn-primary'} btn-sm" onclick="toggleTool('${t.id}',${!t.aktiv})">${t.aktiv?'Deaktivieren':'Aktivieren'}</button>
+      <button class="btn-ghost" onclick="deleteTool('${t.id}')">🗑️</button>
+    </div>
+  </div>`;
+}
+async function toggleTool(id,aktiv){ await api('/tools/'+id,{method:'PUT',body:JSON.stringify({aktiv})}); await loadState(); buildNav(); navigate('tools'); }
+async function deleteTool(id){ if(!confirm('Tool löschen?')) return; await api('/tools/'+id,{method:'DELETE'}); await loadState(); buildNav(); navigate('tools'); toast('Gelöscht','success'); }
+function renderCustomTool(content, t){
+  if(!t){ content.innerHTML=emptyState('Tool nicht gefunden'); return; }
+  content.innerHTML = `<div class="card"><div class="card-body"><div class="placeholder-tool">
+    <div class="eicon">${t.icon||'🧩'}</div>
+    <h2 style="color:var(--fom-primary)">${esc(t.name)}</h2>
+    <p style="margin-top:8px;max-width:520px;margin-inline:auto">${esc(t.beschreibung||'Dieses Tool ist als Platzhalter angelegt.')}</p>
+    <p style="margin-top:16px;font-size:13px">Eigene Logik ergänzt du in <code>renderCustomTool()</code> bzw. als neues Module in <code>public/index.html</code>.</p>
+  </div></div></div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  MODALS
+// ════════════════════════════════════════════════════════════════════════════
+function openModal(title, bodyHtml, buttons=[], extraCls=''){
+  const ov=document.getElementById('overlay');
+  ov.innerHTML = `<div class="modal ${extraCls}">
+    <div class="modal-header"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">${bodyHtml}</div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>`;
+  const foot=ov.querySelector('#modalFooter');
+  buttons.forEach(b=>{ const el=document.createElement('button'); el.className='btn '+(b.cls||'btn-secondary'); el.textContent=b.label; el.onclick=b.fn; foot.appendChild(el); });
+  ov.classList.add('open');
+}
+function closeModal(){ const ov=document.getElementById('overlay'); ov.classList.remove('open'); ov.innerHTML=''; }
+
+function openStudioModal(s){
+  const edit=!!s; s=s||{};
+  const body = `
+    <div class="form-grid">
+      <div class="form-row"><label>Name *</label><input id="f_name" value="${esc(s.name||'')}" placeholder="Studio 4"></div>
+      <div class="form-row"><label>Status</label><select id="f_status">${Object.entries(STUDIO_STATUS).map(([k,v])=>`<option value="${k}" ${s.status===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row"><label>Standort</label><input id="f_standort" value="${esc(s.standort||'')}" placeholder="Stadt / Stadtteil"></div>
+    <div class="form-row"><label>Adresse</label><input id="f_adresse" value="${esc(s.adresse||'')}"></div>
+    <div class="form-grid">
+      <div class="form-row"><label>Eröffnung</label><input type="date" id="f_eroeffnung" value="${esc(s.eroeffnung||'')}"></div>
+      <div class="form-row"><label>Verantwortlich Immo</label><input id="f_vimmo" value="${esc(s.verantwortlichImmo||'')}"></div>
+    </div>
+    <div class="form-row"><label>Verantwortlich DLS</label><input id="f_vdls" value="${esc(s.verantwortlichDls||'')}"></div>
+    <div class="form-row"><label>Notizen</label><textarea id="f_notizen">${esc(s.notizen||'')}</textarea></div>`;
+  const buttons=[{label:'Abbrechen',cls:'btn-secondary',fn:closeModal},{label:edit?'Speichern':'Anlegen',cls:'btn-primary',fn:()=>saveStudio(s.id)}];
+  if(edit) buttons.unshift({label:'Löschen',cls:'btn-danger',fn:()=>deleteStudio(s.id)});
+  openModal(edit?'Studio bearbeiten':'Neues Studio', body, buttons);
+}
+async function saveStudio(id){
+  const payload={
+    name:val('f_name'),status:val('f_status'),standort:val('f_standort'),adresse:val('f_adresse'),
+    eroeffnung:val('f_eroeffnung'),verantwortlichImmo:val('f_vimmo'),verantwortlichDls:val('f_vdls'),notizen:val('f_notizen')
+  };
+  if(!payload.name){ toast('Name ist erforderlich','error'); return; }
+  try{
+    if(id) await api('/studios/'+id,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/studios',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); buildNav(); navigate('studios'); toast('Gespeichert','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+async function deleteStudio(id){
+  if(!confirm('Studio inkl. Infrastruktur und Meldungen löschen?')) return;
+  await api('/studios/'+id,{method:'DELETE'}); await loadState(); closeModal(); buildNav(); navigate('studios'); toast('Gelöscht','success');
+}
+
+function openInfraModal(id, studioIdPreset){
+  const i = id ? State.infrastruktur.find(x=>x.id===id) : {};
+  const edit=!!id;
+  const studioId = i.studioId || studioIdPreset || (State.currentStudio||'');
+  const body = `
+    <div class="form-grid">
+      <div class="form-row"><label>Studio *</label><select id="i_studio">${State.studios.map(s=>`<option value="${s.id}" ${studioId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
+      <div class="form-row"><label>Kategorie</label><select id="i_kat">${INFRA_KATEGORIEN.map(k=>`<option ${i.kategorie===k?'selected':''}>${k}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row"><label>Titel *</label><input id="i_titel" value="${esc(i.titel||'')}" placeholder="z.B. Mobiles Klimagerät Trainingsraum"></div>
+    <div class="form-row"><label>Beschreibung</label><textarea id="i_desc" placeholder="z.B. Abluftschlauch nur mit Ductape fixiert, ohne Abluftfolie...">${esc(i.beschreibung||'')}</textarea></div>
+    <div class="form-grid">
+      <div class="form-row"><label>Status</label><select id="i_status">${Object.entries(INFRA_STATUS).map(([k,v])=>`<option value="${k}" ${i.status===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+      <div class="form-row"><label>Reicht es aus?</label><select id="i_ausr">${Object.entries(AUSREICHEND).map(([k,v])=>`<option value="${k}" ${i.ausreichend===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+    </div>`;
+  openModal(edit?'Infrastruktur bearbeiten':'Infrastruktur erfassen', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Erfassen',cls:'btn-primary',fn:()=>saveInfra(id)}
+  ]);
+}
+async function saveInfra(id){
+  if(!requireUser()) return;
+  const payload={
+    studioId:val('i_studio'),kategorie:val('i_kat'),titel:val('i_titel'),beschreibung:val('i_desc'),
+    status:val('i_status'),ausreichend:val('i_ausr'),erstelltVon:Me.team+' – '+Me.name
+  };
+  if(!payload.titel){ toast('Titel ist erforderlich','error'); return; }
+  try{
+    if(id) await api('/infrastruktur/'+id,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/infrastruktur',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); toast('Gespeichert','success');
+    if(State.currentStudio && document.getElementById('overlay')) {}
+    navigate(State.current);
+  }catch(e){ toast(e.message,'error'); }
+}
+
+function openToolModal(id){
+  const t = id ? State.tools.find(x=>x.id===id) : {};
+  const edit=!!id;
+  const body=`
+    <div class="form-grid">
+      <div class="form-row"><label>Name *</label><input id="t_name" value="${esc(t.name||'')}" placeholder="z.B. Mängelliste"></div>
+      <div class="form-row"><label>Icon (Emoji)</label><input id="t_icon" value="${esc(t.icon||'🧩')}" placeholder="🧩"></div>
+    </div>
+    <div class="form-row"><label>Beschreibung</label><textarea id="t_desc">${esc(t.beschreibung||'')}</textarea></div>
+    <div class="form-row"><label><input type="checkbox" id="t_aktiv" style="width:auto;margin-right:6px" ${t.aktiv?'checked':''}> In Seitenleiste anzeigen (aktiv)</label></div>`;
+  openModal(edit?'Tool bearbeiten':'Neues Tool', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Anlegen',cls:'btn-primary',fn:()=>saveTool(id)}
+  ]);
+}
+async function saveTool(id){
+  const payload={name:val('t_name'),icon:val('t_icon')||'🧩',beschreibung:val('t_desc'),aktiv:document.getElementById('t_aktiv').checked};
+  if(!payload.name){ toast('Name ist erforderlich','error'); return; }
+  if(id) await api('/tools/'+id,{method:'PUT',body:JSON.stringify(payload)});
+  else await api('/tools',{method:'POST',body:JSON.stringify(payload)});
+  await loadState(); closeModal(); buildNav(); navigate('tools'); toast('Gespeichert','success');
+}
+
+// User-Profil
+function openUserModal(){
+  const body=`
+    <div class="form-row"><label>Dein Name</label><input id="u_name" value="${esc(Me.name)}" placeholder="Vor- und Nachname"></div>
+    <div class="form-row"><label>Dein Team</label><select id="u_team">
+      <option value="DLS" ${Me.team==='DLS'?'selected':''}>DLS-Team</option>
+      <option value="Immo" ${Me.team==='Immo'?'selected':''}>Immobilienmanagement</option>
+    </select></div>
+    <p style="font-size:12.5px;color:var(--gray-400)">Wird lokal gespeichert und allen Meldungen zugeordnet.</p>`;
+  openModal('Profil', body, [{label:'Speichern',cls:'btn-primary',fn:()=>{ const n=val('u_name').trim(); if(!n){toast('Name fehlt','error');return;} Me.set(n,val('u_team')); closeModal(); applyUser(); toast('Profil gespeichert','success'); }}]);
+}
+function applyUser(){
+  document.getElementById('userName').textContent = Me.name || 'Anmelden';
+  document.getElementById('userRole').textContent = Me.team ? (Me.team==='DLS'?'DLS-Team':'Immobilienmanagement') : 'Team wählen';
+  document.getElementById('userAvatar').textContent = Me.name ? initials(Me.name) : '??';
+}
+function requireUser(){ if(!Me.name||!Me.team){ openUserModal(); toast('Bitte zuerst Profil anlegen','error'); return false; } return true; }
+
+// Utils
+function studioById(id){ return State.studios.find(s=>s.id===id); }
+function val(id){ return (document.getElementById(id)?.value||'').trim(); }
+function emptyState(msg){ return `<div class="empty-state"><div class="eicon">📭</div>${esc(msg)}</div>`; }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════════════════
+async function init(){
+  try{ await loadState(); }catch(e){ toast('Server nicht erreichbar','error'); }
+  buildNav(); applyUser(); navigate('dashboard');
+  if(!Me.name) setTimeout(openUserModal, 400);
+}
+init();
+</script>
+</body>
+</html>

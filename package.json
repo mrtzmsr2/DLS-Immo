@@ -1,0 +1,27 @@
+{
+  "name": "dls-immo-portal",
+  "version": "1.0.0",
+  "description": "Kollaboratives Kommunikationsportal zwischen DLS-Team und Immobilienmanagement – Studio-Übersicht, Infrastruktur-Status und erweiterbare Tools.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "dls",
+    "immobilienmanagement",
+    "studio",
+    "kommunikation",
+    "portal"
+  ],
+  "author": "BGL Infom",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
