@@ -153,8 +153,7 @@ input,select,textarea{width:100%;padding:9px 12px;border:1px solid var(--gray-20
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-primary);box-shadow:0 0 0 3px rgba(0,191,179,.12)}
 
 /* Modal */
-.overlay{display:none;position:fixed;inset:0;background:rgba(16,32,40,.45);z-index:200;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}
-.overlay.open{display:flex}
+.overlay{display:none;position:fixed;inset:0;background:rgba(16,32,40,.45);z-index:200;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)}.overlay.open{display:flex}
 .modal{background:#fff;border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;animation:modalIn .28s var(--ease-out)}
 @keyframes modalIn{from{transform:translateY(16px) scale(.98);opacity:0}to{transform:none;opacity:1}}
 .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between}
@@ -183,6 +182,20 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 .section-title{font-size:13px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.6px;margin:20px 0 12px}
 .placeholder-tool{text-align:center;padding:60px 24px;color:var(--gray-400)}
 .placeholder-tool .eicon{font-size:48px;margin-bottom:16px}
+.modal-wide{max-width:760px}
+
+/* Fotos */
+.foto-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px;margin-bottom:14px}
+.foto-thumb{position:relative;border-radius:var(--radius);overflow:hidden;border:1px solid var(--gray-200);background:var(--gray-50)}
+.foto-thumb img{width:100%;height:108px;object-fit:cover;cursor:zoom-in;display:block;transition:transform .25s}
+.foto-thumb img:hover{transform:scale(1.05)}
+.foto-cap{padding:5px 8px;font-size:11.5px;color:var(--gray-600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.foto-del{position:absolute;top:5px;right:5px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.foto-del:hover{background:var(--red)}
+.lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:400;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;flex-direction:column;gap:14px}
+.lightbox.open{display:flex}
+.lightbox img{max-width:100%;max-height:86vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.lightbox .lb-cap{color:rgba(255,255,255,.85);font-size:13.5px}
 
 @media(max-width:980px){.sidebar{transform:translateX(-100%)}.sidebar.open{transform:translateX(0)}.main{margin-left:0}.menu-toggle{display:inline-flex}.metrics-grid{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
 @media(max-width:600px){.metrics-grid{grid-template-columns:1fr 1fr}.content{padding:16px}.form-grid{grid-template-columns:1fr}}
@@ -221,6 +234,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 </div>
 
 <div class="overlay" id="overlay"></div>
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightboxImg" src="" alt=""><div class="lb-cap" id="lightboxCap"></div></div>
 <div class="toasts" id="toasts"></div>
 
 <script>
@@ -266,6 +280,10 @@ const INFRA_STATUS = {
 const AUSREICHEND = {
   ja:{label:'Reicht aus',badge:'badge-green'}, ja_vorerst:{label:'Reicht vorerst',badge:'badge-yellow'},
   nein:{label:'Reicht nicht',badge:'badge-red'}
+};
+const BEARBEITUNG = {
+  offen:{label:'Offen',badge:'badge-gray'}, in_arbeit:{label:'In Arbeit',badge:'badge-blue'},
+  erledigt:{label:'Erledigt',badge:'badge-green'}
 };
 const INFRA_KATEGORIEN = ['Klima','Strom','Wasser','Netzwerk','Heizung','Sicherheit','Reinigung','Mobiliar','Sonstiges'];
 
@@ -424,6 +442,7 @@ function openStudio(id){
   State.currentStudio = id;
   const infra = State.infrastruktur.filter(i=>i.studioId===id).sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm));
   const msgs = State.nachrichten.filter(n=>n.studioId===id).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const fotos = (s.fotos||[]).slice().sort((a,b)=>new Date(b.hochgeladenAm)-new Date(a.hochgeladenAm));
   const st = STUDIO_STATUS[s.status]||{label:s.status,badge:'badge-gray'};
   const body = `
     <div class="detail-row"><div class="detail-label">Status</div><div><span class="badge ${st.badge}">${st.label}</span></div></div>
@@ -433,6 +452,15 @@ function openStudio(id){
     <div class="detail-row"><div class="detail-label">Verantwortlich Immo</div><div>${esc(s.verantwortlichImmo||'—')}</div></div>
     <div class="detail-row"><div class="detail-label">Rückmeldende Person (DLS)</div><div>${esc(s.verantwortlichDls||'—')}</div></div>
     ${s.notizen?`<div class="detail-row"><div class="detail-label">Notizen</div><div>${esc(s.notizen)}</div></div>`:''}
+
+    <div class="section-title">📷 Fotos vom Raum (${fotos.length})</div>
+    ${fotos.length?`<div class="foto-grid">${fotos.map(f=>`
+      <div class="foto-thumb">
+        <img src="${esc(f.datei)}" alt="${esc(f.raum||'Foto')}" onclick="openLightbox('${esc(f.datei)}','${esc((f.raum||'')+(f.hochgeladenVon?' · '+f.hochgeladenVon:''))}')">
+        <div class="foto-cap" title="${esc(f.raum||'')}">${esc(f.raum||'ohne Angabe')}</div>
+        <button class="foto-del" onclick="deleteFoto('${id}','${f.id}')" title="Foto löschen">×</button>
+      </div>`).join('')}</div>`:'<div class="empty-state" style="padding:16px">Noch keine Fotos</div>'}
+    <button class="btn btn-secondary btn-sm" onclick="pickStudioFoto('${id}')">📷 Foto hinzufügen</button>
 
     <div class="section-title">🔧 Infrastruktur (${infra.length})</div>
     <div>${infra.length? infra.map(infraItem).join('') : '<div class="empty-state" style="padding:20px">Noch keine Einträge</div>'}</div>
@@ -459,9 +487,13 @@ async function sendStudioMsg(studioId){
 
 function infraItem(i){
   const st=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
-  return `<div class="infra-item s-${esc(i.status)}">
+  const bs=BEARBEITUNG[i.bearbeitungsstatus]||BEARBEITUNG.offen;
+  const erledigt=i.bearbeitungsstatus==='erledigt';
+  const ueberfaellig = i.faelligBis && !erledigt && new Date(i.faelligBis) < new Date(new Date().toDateString());
+  return `<div class="infra-item s-${esc(i.status)}" style="${erledigt?'opacity:.62':''}">
     <div class="infra-head"><h4>${esc(i.titel)}</h4>
       <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-ghost" onclick="toggleErledigt('${i.id}',${!erledigt})" title="${erledigt?'Wieder öffnen':'Als erledigt markieren'}">${erledigt?'↩️':'✅'}</button>
         <button class="btn-ghost" onclick="openInfraModal('${i.id}')" title="Bearbeiten">✏️</button>
         <button class="btn-ghost" onclick="deleteInfra('${i.id}')" title="Löschen">🗑️</button>
       </div>
@@ -472,11 +504,22 @@ function infraItem(i){
     <div class="infra-foot">
       <span class="badge badge-gray">${esc(i.kategorie)}</span>
       <span class="badge ${st.badge}">${st.label}</span>
+      <span class="badge ${bs.badge}">${bs.label}</span>
       ${ausrBadge(i.ausreichend)}
       ${i.hitzekritisch==='ja'?'<span class="badge badge-red">hitzekritisch</span>':''}
+      ${i.zustaendig?`<span title="Zuständig">👤 ${esc(i.zustaendig)}</span>`:''}
+      ${i.faelligBis?`<span class="badge ${ueberfaellig?'badge-red':'badge-blue'}" title="Fällig bis">📅 ${fmtD(i.faelligBis)}</span>`:''}
       <span style="margin-left:auto">${esc(i.erstelltVon||'')} · ${fmtDT(i.geaendertAm)}</span>
     </div>
   </div>`;
+}
+async function toggleErledigt(id,done){
+  try{
+    await api('/infrastruktur/'+id,{method:'PUT',body:JSON.stringify({bearbeitungsstatus:done?'erledigt':'offen'})});
+    await loadState(); toast(done?'Als erledigt markiert':'Wieder geöffnet','success');
+    if(State.currentStudio && document.getElementById('overlay').classList.contains('open')) openStudio(State.currentStudio);
+    else navigate(State.current);
+  }catch(e){ toast(e.message,'error'); }
 }
 function ausrBadge(a){ const x=AUSREICHEND[a]; return x?`<span class="badge ${x.badge}">${x.label}</span>`:''; }
 function msgBubble(n){
@@ -492,23 +535,31 @@ function msgBubble(n){
 let infraFilter='alle';
 function renderInfrastruktur(content, actions){
   actions.innerHTML = `<button class="btn btn-primary" onclick="openInfraModal()">+ Infrastruktur</button>`;
-  const filters=[['alle','Alle'],['kritisch','Kritisch'],['handlungsbedarf','Handlungsbedarf'],['provisorisch','Provisorisch'],['ok','OK']];
-  const list = State.infrastruktur.filter(i=>infraFilter==='alle'||i.status===infraFilter)
+  const filters=[['alle','Alle'],['offen','Nur offen'],['kritisch','Kritisch'],['handlungsbedarf','Handlungsbedarf'],['provisorisch','Provisorisch'],['ok','OK'],['erledigt','Erledigt']];
+  const list = State.infrastruktur.filter(i=>{
+      if(infraFilter==='alle') return true;
+      if(infraFilter==='offen') return i.bearbeitungsstatus!=='erledigt';
+      if(infraFilter==='erledigt') return i.bearbeitungsstatus==='erledigt';
+      return i.status===infraFilter;
+    })
     .sort((a,b)=> rank(b.status)-rank(a.status) || (studioById(a.studioId)?.standort||'').localeCompare(studioById(b.studioId)?.standort||'','de'));
   content.innerHTML = `
     <div class="toolbar"><div class="chip-filter">${filters.map(([f,l])=>`<button class="${infraFilter===f?'active':''}" onclick="setInfraFilter('${f}')">${l}</button>`).join('')}</div><div class="spacer"></div><span class="badge badge-gray">${list.length} Einträge</span></div>
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Standort</th><th>Studio</th><th>Status</th><th>Reicht aus?</th><th>Benötigt</th><th></th></tr></thead>
+      <thead><tr><th>Standort</th><th>Studio</th><th>Status</th><th>Bearbeitung</th><th>Zuständig</th><th>Reicht aus?</th><th>Benötigt</th><th></th></tr></thead>
       <tbody>${list.length? list.map(i=>{
         const st=studioById(i.studioId); const s=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
-        return `<tr>
+        const bs=BEARBEITUNG[i.bearbeitungsstatus]||BEARBEITUNG.offen; const erledigt=i.bearbeitungsstatus==='erledigt';
+        return `<tr style="${erledigt?'opacity:.6':''}">
           <td><b>${esc(st?st.standort:'—')}</b></td>
           <td>${esc(st?st.name:'—')}</td>
           <td><span class="badge ${s.badge}">${s.label}</span></td>
+          <td><span class="badge ${bs.badge}">${bs.label}</span></td>
+          <td>${esc(i.zustaendig||'—')}</td>
           <td>${ausrBadge(i.ausreichend)||'—'}</td>
-          <td style="max-width:420px">${esc(i.benoetigt||'—')}</td>
-          <td style="white-space:nowrap"><button class="btn-ghost" onclick="openStudio('${i.studioId}')" title="Details">🔍</button><button class="btn-ghost" onclick="openInfraModal('${i.id}')">✏️</button><button class="btn-ghost" onclick="deleteInfra('${i.id}')">🗑️</button></td>
-        </tr>`;}).join('') : `<tr><td colspan="6">${emptyState('Keine Einträge')}</td></tr>`}</tbody>
+          <td style="max-width:380px">${esc(i.benoetigt||'—')}</td>
+          <td style="white-space:nowrap"><button class="btn-ghost" onclick="toggleErledigt('${i.id}',${!erledigt})" title="${erledigt?'Wieder öffnen':'Erledigt'}">${erledigt?'↩️':'✅'}</button><button class="btn-ghost" onclick="openStudio('${i.studioId}')" title="Details">🔍</button><button class="btn-ghost" onclick="openInfraModal('${i.id}')">✏️</button><button class="btn-ghost" onclick="deleteInfra('${i.id}')">🗑️</button></td>
+        </tr>`;}).join('') : `<tr><td colspan="8">${emptyState('Keine Einträge')}</td></tr>`}</tbody>
     </table></div></div>`;
 }
 function setInfraFilter(f){ infraFilter=f; renderInfrastruktur(document.getElementById('content'), document.getElementById('topbarActions')); }
@@ -539,7 +590,7 @@ function renderBedarf(content){
       return `<div class="card">
         <div class="card-header"><span class="card-title">📍 ${esc(c)}</span><span class="badge badge-gray">${arr.length} Studio(s)</span></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>Studio</th><th>Status</th><th>Reicht aus?</th><th>Benötigt</th><th>Grund / Anmerkung</th></tr></thead>
+          <thead><tr><th>Studio</th><th>Status</th><th>Reicht aus?</th><th>Benötigt</th><th>Grund / Anmerkung</th><th></th></tr></thead>
           <tbody>${arr.map(i=>{const st=studioById(i.studioId);const s=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
             return `<tr style="cursor:pointer" onclick="openStudio('${i.studioId}')">
               <td><b>${esc(st?st.name:'—')}</b></td>
@@ -547,6 +598,7 @@ function renderBedarf(content){
               <td>${ausrBadge(i.ausreichend)||'—'}</td>
               <td style="max-width:320px">${esc(i.benoetigt||'—')}</td>
               <td style="max-width:360px;color:var(--gray-600);font-size:12.5px">${esc(i.beschreibung||'')}</td>
+              <td style="white-space:nowrap"><button class="btn-ghost" onclick="event.stopPropagation();openInfraModal('${i.id}')" title="Bearbeiten">✏️</button></td>
             </tr>`;}).join('')}</tbody>
         </table></div>
       </div>`;
@@ -690,6 +742,11 @@ function openInfraModal(id, studioIdPreset){
       <div class="form-row"><label>Status</label><select id="i_status">${Object.entries(INFRA_STATUS).map(([k,v])=>`<option value="${k}" ${i.status===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
       <div class="form-row"><label>Reicht es aus?</label><select id="i_ausr">${Object.entries(AUSREICHEND).map(([k,v])=>`<option value="${k}" ${i.ausreichend===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
     </div>
+    <div class="form-grid">
+      <div class="form-row"><label>Bearbeitung</label><select id="i_bearb">${Object.entries(BEARBEITUNG).map(([k,v])=>`<option value="${k}" ${(i.bearbeitungsstatus||'offen')===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+      <div class="form-row"><label>Zuständig (Team / Person)</label><input id="i_zustaendig" value="${esc(i.zustaendig||'')}" placeholder="z.B. Immo – M. Mustermann"></div>
+    </div>
+    <div class="form-row"><label>Fällig bis</label><input type="date" id="i_faellig" value="${esc(i.faelligBis||'')}"></div>
     <div class="form-row"><label>Vorhandene Geräte</label><textarea id="i_vorhanden" placeholder="z.B. Klimagerät bestellt, Ventilator geliefert...">${esc(i.vorhandeneGeraete||'')}</textarea></div>
     <div class="form-row"><label>Benötigt (was wird gebraucht?)</label><textarea id="i_benoetigt" placeholder="z.B. Klimagerät + Ventilator, passender Aufsatz, Fensterabdichtung...">${esc(i.benoetigt||'')}</textarea></div>`;
   openModal(edit?'Infrastruktur bearbeiten':'Infrastruktur erfassen', body, [
@@ -702,6 +759,7 @@ async function saveInfra(id){
   const payload={
     studioId:val('i_studio'),kategorie:val('i_kat'),titel:val('i_titel'),beschreibung:val('i_desc'),
     status:val('i_status'),ausreichend:val('i_ausr'),vorhandeneGeraete:val('i_vorhanden'),benoetigt:val('i_benoetigt'),
+    bearbeitungsstatus:val('i_bearb'),zustaendig:val('i_zustaendig'),faelligBis:val('i_faellig'),
     erstelltVon:Me.team+' – '+Me.name
   };
   if(!payload.titel){ toast('Titel ist erforderlich','error'); return; }
@@ -759,6 +817,53 @@ function requireUser(){ if(!Me.name||!Me.team){ openUserModal(); toast('Bitte zu
 function studioById(id){ return State.studios.find(s=>s.id===id); }
 function val(id){ return (document.getElementById(id)?.value||'').trim(); }
 function emptyState(msg){ return `<div class="empty-state"><div class="eicon">📭</div>${esc(msg)}</div>`; }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  FOTOS
+// ════════════════════════════════════════════════════════════════════════════
+function pickStudioFoto(studioId){
+  if(!requireUser()) return;
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.setAttribute('capture','environment');
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    try{
+      toast('Foto wird verarbeitet…');
+      const dataUrl=await resizeImage(file,1600,0.82);
+      const raum=(prompt('Welcher Raum / Bereich? (optional)','')||'').trim();
+      await api('/studios/'+studioId+'/fotos',{method:'POST',body:JSON.stringify({dataUrl,raum,hochgeladenVon:Me.team+' – '+Me.name})});
+      await loadState(); toast('Foto gespeichert','success'); openStudio(studioId);
+    }catch(e){ toast(e.message||'Upload fehlgeschlagen','error'); }
+  };
+  inp.click();
+}
+function resizeImage(file,maxDim,quality){
+  return new Promise((resolve,reject)=>{
+    if(!/^image\//.test(file.type)){ reject(new Error('Bitte ein Bild auswählen')); return; }
+    const url=URL.createObjectURL(file); const img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url);
+      let w=img.naturalWidth, h=img.naturalHeight;
+      if(w>h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+      else if(h>=w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht gelesen werden')); };
+    img.src=url;
+  });
+}
+async function deleteFoto(studioId,fotoId){
+  if(!confirm('Dieses Foto löschen?')) return;
+  try{ await api('/studios/'+studioId+'/fotos/'+fotoId,{method:'DELETE'}); await loadState(); toast('Foto gelöscht','success'); openStudio(studioId); }
+  catch(e){ toast(e.message,'error'); }
+}
+function openLightbox(src,cap){
+  document.getElementById('lightboxImg').src=src;
+  document.getElementById('lightboxCap').textContent=cap||'';
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox(){ const lb=document.getElementById('lightbox'); lb.classList.remove('open'); document.getElementById('lightboxImg').src=''; }
 
 // ════════════════════════════════════════════════════════════════════════════
 //  INIT

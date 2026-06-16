@@ -16,15 +16,18 @@ const PORT = process.env.PORT || 3300;
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const SEED_FILE = path.join(DATA_DIR, 'seed.json');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ───────────────────────────────────────────────────────────────────────────
 //  Persistenz
 // ───────────────────────────────────────────────────────────────────────────
 function ensureDb() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   if (!fs.existsSync(DB_FILE)) {
     const seed = fs.existsSync(SEED_FILE)
       ? JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'))
@@ -51,6 +54,27 @@ function uid(prefix) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+// Speichert ein Bild aus einer Data-URL auf der Platte und gibt den Dateinamen zurück.
+function saveDataUrlImage(dataUrl) {
+  const m = /^data:(image\/(png|jpe?g|webp));base64,(.+)$/i.exec(dataUrl || '');
+  if (!m) return null;
+  const ext = m[2].toLowerCase() === 'jpeg' ? 'jpg' : m[2].toLowerCase();
+  const buf = Buffer.from(m[3], 'base64');
+  if (!buf.length || buf.length > 8 * 1024 * 1024) return null; // Sicherheitslimit 8 MB
+  const fname = uid('foto') + '.' + ext;
+  fs.writeFileSync(path.join(UPLOADS_DIR, fname), buf);
+  return fname;
+}
+
+function deleteUploadFile(fileUrl) {
+  try {
+    const fp = path.join(UPLOADS_DIR, path.basename(fileUrl || ''));
+    if (fp.startsWith(UPLOADS_DIR) && fs.existsSync(fp)) fs.unlinkSync(fp);
+  } catch (_) {
+    /* ignorieren */
+  }
 }
 
 // Generischer CRUD-Helfer für eine Collection.
@@ -111,6 +135,7 @@ function makeCrud(collection, { idPrefix, validate }) {
     const [removed] = list.splice(idx, 1);
     // Abhängige Datensätze miträumen.
     if (collection === 'studios') {
+      (removed.fotos || []).forEach((f) => deleteUploadFile(f.datei));
       db.infrastruktur = (db.infrastruktur || []).filter((i) => i.studioId !== removed.id);
       db.nachrichten = (db.nachrichten || []).filter((n) => n.studioId !== removed.id);
     }
@@ -157,6 +182,45 @@ app.use(
     validate: (b) => (!b.name ? 'Name ist erforderlich' : null),
   })
 );
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Studio-Fotos
+// ───────────────────────────────────────────────────────────────────────────
+app.post('/api/studios/:id/fotos', (req, res) => {
+  const db = readDb();
+  const studio = (db.studios || []).find((s) => s.id === req.params.id);
+  if (!studio) return res.status(404).json({ error: 'Studio nicht gefunden' });
+  const fname = saveDataUrlImage(req.body.dataUrl);
+  if (!fname)
+    return res.status(400).json({ error: 'Ungültiges oder zu großes Bild (max. 8 MB, JPG/PNG/WebP)' });
+  const foto = {
+    id: uid('foto'),
+    datei: '/uploads/' + fname,
+    raum: (req.body.raum || '').trim(),
+    beschreibung: (req.body.beschreibung || '').trim(),
+    hochgeladenVon: (req.body.hochgeladenVon || '').trim(),
+    hochgeladenAm: nowIso(),
+  };
+  studio.fotos = studio.fotos || [];
+  studio.fotos.push(foto);
+  studio.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(foto);
+});
+
+app.delete('/api/studios/:id/fotos/:fotoId', (req, res) => {
+  const db = readDb();
+  const studio = (db.studios || []).find((s) => s.id === req.params.id);
+  if (!studio) return res.status(404).json({ error: 'Studio nicht gefunden' });
+  const list = studio.fotos || [];
+  const idx = list.findIndex((f) => f.id === req.params.fotoId);
+  if (idx === -1) return res.status(404).json({ error: 'Foto nicht gefunden' });
+  const [removed] = list.splice(idx, 1);
+  deleteUploadFile(removed.datei);
+  studio.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
 
 // Gesamter Zustand auf einen Schlag (für initiales Laden des Frontends).
 app.get('/api/state', (req, res) => {
