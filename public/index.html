@@ -142,6 +142,11 @@ tbody tr:hover td{background:rgba(0,191,179,.07)}
 .msg-author{font-size:13px;font-weight:700;color:var(--gray-800)}
 .msg-time{font-size:11px;color:var(--gray-400)}
 .msg-text{font-size:13.5px;color:var(--gray-800);white-space:pre-wrap;word-break:break-word}
+.msg-clickable{cursor:pointer;border-radius:12px;transition:background .15s}
+.msg-clickable:hover .msg-bubble{border-color:var(--fom-primary);box-shadow:var(--shadow-sm)}
+.msg-thread-info{margin-top:7px;font-size:11.5px;font-weight:600;color:var(--fom-primary)}
+.thread-root{margin-bottom:6px}
+.thread-root .msg-bubble{border-left:3px solid var(--fom-primary);background:#fff}
 .composer{display:flex;gap:10px;margin-top:16px;align-items:flex-end}
 .composer textarea{flex:1;min-height:46px;max-height:160px;resize:vertical}
 
@@ -241,7 +246,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 // ════════════════════════════════════════════════════════════════════════════
 //  STATE & API
 // ════════════════════════════════════════════════════════════════════════════
-const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], current:'dashboard', currentStudio:null };
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], current:'dashboard', currentStudio:null, currentThread:null };
 const Me = {
   get name(){ return localStorage.getItem('dls_name') || ''; },
   get team(){ return localStorage.getItem('dls_team') || ''; },
@@ -441,7 +446,7 @@ function openStudio(id){
   const s = studioById(id); if(!s) return;
   State.currentStudio = id;
   const infra = State.infrastruktur.filter(i=>i.studioId===id).sort((a,b)=>new Date(b.geaendertAm)-new Date(a.geaendertAm));
-  const msgs = State.nachrichten.filter(n=>n.studioId===id).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const msgs = State.nachrichten.filter(n=>n.studioId===id && !n.parentId).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
   const fotos = (s.fotos||[]).slice().sort((a,b)=>new Date(b.hochgeladenAm)-new Date(a.hochgeladenAm));
   const st = STUDIO_STATUS[s.status]||{label:s.status,badge:'badge-gray'};
   const body = `
@@ -467,7 +472,7 @@ function openStudio(id){
     <button class="btn btn-secondary btn-sm" onclick="openInfraModal(null,'${id}')">+ Infrastruktur erfassen</button>
 
     <div class="section-title">💬 Meldungen (${msgs.length})</div>
-    <div class="feed" style="max-height:none">${msgs.length? msgs.map(msgBubble).join('') : '<div class="empty-state" style="padding:20px">Noch keine Meldungen</div>'}</div>
+    <div class="feed" style="max-height:none">${msgs.length? msgs.map(n=>msgBubble(n,true)).join('') : '<div class="empty-state" style="padding:20px">Noch keine Meldungen</div>'}</div>
     <div class="composer">
       <textarea id="studioMsg" placeholder="Meldung an das andere Team..."></textarea>
       <button class="btn btn-primary" onclick="sendStudioMsg('${id}')">Senden</button>
@@ -522,10 +527,12 @@ async function toggleErledigt(id,done){
   }catch(e){ toast(e.message,'error'); }
 }
 function ausrBadge(a){ const x=AUSREICHEND[a]; return x?`<span class="badge ${x.badge}">${x.label}</span>`:''; }
-function msgBubble(n){
-  return `<div class="msg team-${esc(n.team)}">
+function msgBubble(n,clickable){
+  const replies=clickable?State.nachrichten.filter(r=>r.parentId===n.id):[];
+  const info=clickable?`<div class="msg-thread-info">${replies.length?`💬 ${replies.length} Antwort${replies.length>1?'en':''}`:'↪︎ Antworten'}</div>`:'';
+  return `<div class="msg team-${esc(n.team)}${clickable?' msg-clickable':''}"${clickable?` onclick="openThread('${n.id}')" title="Öffnen & antworten"`:''}>
     <div class="msg-avatar">${initials(n.autor)}</div>
-    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div></div>
+    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div>${info}</div>
   </div>`;
 }
 
@@ -608,15 +615,18 @@ function renderBedarf(content){
 //  KOMMUNIKATION
 // ════════════════════════════════════════════════════════════════════════════
 function renderKommunikation(content){
-  const msgs = [...State.nachrichten].sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const msgs = [...State.nachrichten].filter(n=>!n.parentId).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
   content.innerHTML = `
     <div class="card">
-      <div class="card-header"><span class="card-title">💬 Gemeinsamer Verlauf</span><span class="badge badge-gray">${msgs.length} Meldungen</span></div>
+      <div class="card-header"><span class="card-title">💬 Gemeinsamer Verlauf</span><span class="badge badge-gray">${msgs.length} Themen</span></div>
       <div class="card-body">
         <div class="feed" id="feed">${msgs.length? msgs.map(n=>{
           const st=studioById(n.studioId);
-          return `<div class="msg team-${esc(n.team)}"><div class="msg-avatar">${initials(n.autor)}</div>
-            <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div></div></div>`;
+          const replies=State.nachrichten.filter(r=>r.parentId===n.id);
+          const last=replies.length?replies.reduce((a,b)=>new Date(a.erstelltAm)>new Date(b.erstelltAm)?a:b):null;
+          return `<div class="msg team-${esc(n.team)} msg-clickable" onclick="openThread('${n.id}')" title="Öffnen & antworten"><div class="msg-avatar">${initials(n.autor)}</div>
+            <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div>
+            <div class="msg-thread-info">${replies.length?`💬 ${replies.length} Antwort${replies.length>1?'en':''} · zuletzt ${fmtDT(last.erstelltAm)} von ${esc(last.autor)}`:'↪︎ Antworten'}</div></div></div>`;
         }).join('') : emptyState('Noch keine Meldungen – starte die Kommunikation!')}</div>
         <div class="composer">
           <div style="display:flex;flex-direction:column;gap:8px;flex:1">
@@ -624,7 +634,7 @@ function renderKommunikation(content){
               <select id="komStudio" style="max-width:200px"><option value="">Allgemein (kein Studio)</option>${State.studios.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
               <select id="komTyp" style="max-width:150px"><option value="info">Info</option><option value="wichtig">Wichtig</option></select>
             </div>
-            <textarea id="komText" placeholder="Nachricht an das andere Team..."></textarea>
+            <textarea id="komText" placeholder="Neues Thema / Nachricht an das andere Team..."></textarea>
           </div>
           <button class="btn btn-primary" onclick="sendKom()">Senden</button>
         </div>
@@ -639,6 +649,33 @@ async function sendKom(){
   const typ=document.getElementById('komTyp').value;
   await api('/nachrichten',{method:'POST',body:JSON.stringify({text,studioId,typ,team:Me.team,autor:Me.name})});
   await loadState(); toast('Gesendet','success'); renderKommunikation(document.getElementById('content'));
+}
+
+// Einzelner Chat-Thread zu einer Nachricht
+function openThread(msgId){
+  const root=State.nachrichten.find(n=>n.id===msgId); if(!root) return;
+  State.currentThread=msgId;
+  const st=studioById(root.studioId);
+  const replies=State.nachrichten.filter(r=>r.parentId===msgId).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const head=`<div class="thread-root msg team-${esc(root.team)}"><div class="msg-avatar">${initials(root.autor)}</div>
+    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(root.autor)}</span><span class="badge ${root.team==='DLS'?'badge-blue':'badge-green'}">${esc(root.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}${root.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(root.erstelltAm)}</span></div><div class="msg-text">${esc(root.text)}</div></div></div>`;
+  const body=`${head}
+    <div class="section-title">Antworten (${replies.length})</div>
+    <div class="feed" id="threadFeed" style="max-height:46vh">${replies.length? replies.map(msgBubble).join('') : '<div class="empty-state" style="padding:16px">Noch keine Antworten</div>'}</div>
+    <div class="composer">
+      <textarea id="threadText" placeholder="Antwort schreiben..."></textarea>
+      <button class="btn btn-primary" onclick="sendThreadReply('${msgId}')">Antworten</button>
+    </div>`;
+  openModal('💬 Thread', body, [{label:'Schließen',cls:'btn-secondary',fn:closeModal}], 'modal-wide');
+  const tf=document.getElementById('threadFeed'); if(tf) tf.scrollTop=tf.scrollHeight;
+}
+async function sendThreadReply(parentId){
+  if(!requireUser()) return;
+  const ta=document.getElementById('threadText'); const text=(ta.value||'').trim(); if(!text) return;
+  const root=State.nachrichten.find(n=>n.id===parentId);
+  await api('/nachrichten',{method:'POST',body:JSON.stringify({text,parentId,studioId:root?root.studioId:null,typ:'info',team:Me.team,autor:Me.name})});
+  await loadState(); toast('Antwort gesendet','success'); openThread(parentId);
+  if(State.current==='kommunikation') renderKommunikation(document.getElementById('content'));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
