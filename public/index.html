@@ -1367,7 +1367,7 @@ function openInfraModal(id, studioIdPreset){
       <div class="form-row"><label>Studio *</label><select id="i_studio">${State.studios.map(s=>`<option value="${s.id}" ${studioId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
       <div class="form-row"><label>Kategorie</label><select id="i_kat">${INFRA_KATEGORIEN.map(k=>`<option ${i.kategorie===k?'selected':''}>${k}</option>`).join('')}</select></div>
     </div>
-    <div class="form-row"><label>Titel *</label><input id="i_titel" value="${esc(i.titel||'')}" placeholder="z.B. Mobiles Klimagerät Trainingsraum"></div>
+    <div class="form-row"><label>Titel *</label><input id="i_titel" value="${esc(i.titel||'')}" placeholder="z.B. Mobiles Klimagerät mit Abluftschlauch"></div>
     <div class="form-row"><label>Beschreibung</label><textarea id="i_desc" placeholder="z.B. Abluftschlauch nur mit Ductape fixiert, ohne Abluftfolie...">${esc(i.beschreibung||'')}</textarea></div>
     <div class="form-grid">
       <div class="form-row"><label>Status</label><select id="i_status">${Object.entries(INFRA_STATUS).map(([k,v])=>`<option value="${k}" ${i.status===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
