@@ -416,6 +416,164 @@ app.delete('/api/tools/:id/eintraege/:eid', (req, res) => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+//  Vorgänge (Kaskaden) – mehrstufige Abläufe mit Schritten und Rückfragen
+// ───────────────────────────────────────────────────────────────────────────
+const VORGANG_STATUS = ['offen', 'laufend', 'wartet', 'abgeschlossen', 'abgebrochen'];
+const SCHRITT_STATUS = ['offen', 'aktiv', 'erledigt', 'uebersprungen'];
+
+app.use(
+  '/api/vorgaenge',
+  makeCrud('vorgaenge', {
+    idPrefix: 'vor',
+    validate: (b) => (!b.titel ? 'Titel ist erforderlich' : null),
+  })
+);
+
+function findVorgang(db, id) {
+  return (db.vorgaenge || []).find((v) => v.id === id);
+}
+
+// Schritte (die Kaskade) ─────────────────────────────────────────────────────
+app.post('/api/vorgaenge/:id/schritte', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const titel = (req.body.titel || '').trim();
+  if (!titel) return res.status(400).json({ error: 'Titel ist erforderlich' });
+  const schritt = {
+    id: uid('schr'),
+    titel,
+    notiz: (req.body.notiz || '').trim(),
+    status: SCHRITT_STATUS.includes(req.body.status) ? req.body.status : 'offen',
+    zustaendig: (req.body.zustaendig || '').trim(),
+    faelligBis: (req.body.faelligBis || '').trim(),
+    erledigtAm: null,
+    erstelltAm: nowIso(),
+    geaendertAm: nowIso(),
+  };
+  v.schritte = v.schritte || [];
+  v.schritte.push(schritt);
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(schritt);
+});
+
+app.put('/api/vorgaenge/:id/schritte/:sid', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const list = v.schritte || [];
+  const idx = list.findIndex((s) => s.id === req.params.sid);
+  if (idx === -1) return res.status(404).json({ error: 'Schritt nicht gefunden' });
+  const next = { ...list[idx] };
+  if (req.body.titel !== undefined) {
+    const t = (req.body.titel || '').trim();
+    if (!t) return res.status(400).json({ error: 'Titel ist erforderlich' });
+    next.titel = t;
+  }
+  if (req.body.notiz !== undefined) next.notiz = (req.body.notiz || '').trim();
+  if (req.body.zustaendig !== undefined) next.zustaendig = (req.body.zustaendig || '').trim();
+  if (req.body.faelligBis !== undefined) next.faelligBis = (req.body.faelligBis || '').trim();
+  if (req.body.status !== undefined && SCHRITT_STATUS.includes(req.body.status)) {
+    next.status = req.body.status;
+    next.erledigtAm = req.body.status === 'erledigt' ? nowIso() : null;
+  }
+  next.geaendertAm = nowIso();
+  list[idx] = next;
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(next);
+});
+
+// Schritte umsortieren (komplette Reihenfolge per ID-Liste).
+app.put('/api/vorgaenge/:id/schritte-sortieren', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const order = Array.isArray(req.body.reihenfolge) ? req.body.reihenfolge : [];
+  const list = v.schritte || [];
+  v.schritte = order.map((sid) => list.find((s) => s.id === sid)).filter(Boolean)
+    .concat(list.filter((s) => !order.includes(s.id)));
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(v.schritte);
+});
+
+app.delete('/api/vorgaenge/:id/schritte/:sid', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const list = v.schritte || [];
+  const idx = list.findIndex((s) => s.id === req.params.sid);
+  if (idx === -1) return res.status(404).json({ error: 'Schritt nicht gefunden' });
+  const [removed] = list.splice(idx, 1);
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
+
+// Rückfragen zum Vorgang ─────────────────────────────────────────────────────
+app.post('/api/vorgaenge/:id/fragen', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const text = (req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Frage ist erforderlich' });
+  const frage = {
+    id: uid('frg'),
+    text,
+    autor: (req.body.autor || '').trim(),
+    team: (req.body.team || '').trim(),
+    antwort: '',
+    beantwortetVon: '',
+    beantwortetAm: null,
+    erstelltAm: nowIso(),
+  };
+  v.fragen = v.fragen || [];
+  v.fragen.push(frage);
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(frage);
+});
+
+app.put('/api/vorgaenge/:id/fragen/:fid', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const list = v.fragen || [];
+  const idx = list.findIndex((f) => f.id === req.params.fid);
+  if (idx === -1) return res.status(404).json({ error: 'Frage nicht gefunden' });
+  const next = { ...list[idx] };
+  if (req.body.antwort !== undefined) {
+    next.antwort = (req.body.antwort || '').trim();
+    next.beantwortetVon = (req.body.beantwortetVon || '').trim();
+    next.beantwortetAm = next.antwort ? nowIso() : null;
+  }
+  if (req.body.text !== undefined) {
+    const t = (req.body.text || '').trim();
+    if (!t) return res.status(400).json({ error: 'Frage ist erforderlich' });
+    next.text = t;
+  }
+  list[idx] = next;
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(next);
+});
+
+app.delete('/api/vorgaenge/:id/fragen/:fid', (req, res) => {
+  const db = readDb();
+  const v = findVorgang(db, req.params.id);
+  if (!v) return res.status(404).json({ error: 'Vorgang nicht gefunden' });
+  const list = v.fragen || [];
+  const idx = list.findIndex((f) => f.id === req.params.fid);
+  if (idx === -1) return res.status(404).json({ error: 'Frage nicht gefunden' });
+  const [removed] = list.splice(idx, 1);
+  v.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 //  Studio-Fotos
 // ───────────────────────────────────────────────────────────────────────────
 app.post('/api/studios/:id/fotos', (req, res) => {

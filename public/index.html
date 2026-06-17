@@ -174,6 +174,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 .login-list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin-top:4px}
 .login-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:13.5px;transition:all .15s}
 .login-item:hover{border-color:var(--fom-primary);background:var(--gray-50)}
+.vg-steps{display:flex;flex-direction:column;gap:8px}
+.vg-step{display:flex;align-items:flex-start;gap:8px;padding:12px 14px;border:1px solid var(--gray-200);border-radius:10px;border-left:4px solid var(--fom-primary);background:var(--cardBg,#fff)}
+.vg-step.done{opacity:.62;border-left-color:#28a745}
+.vg-step-num{width:24px;height:24px;border-radius:50%;background:var(--gray-100);color:var(--gray-600);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto;margin-top:2px}
+.vg-frage{padding:12px 14px;border:1px solid var(--gray-200);border-radius:10px;background:var(--gray-50)}
+.vg-frage.offen{border-left:4px solid #ffc107}
+.vg-antwort{margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--gray-200);border-radius:8px;font-size:13.5px}
 
 /* Misc */
 .page{display:none}.page.active{display:block}
@@ -253,7 +260,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 // ════════════════════════════════════════════════════════════════════════════
 //  STATE & API
 // ════════════════════════════════════════════════════════════════════════════
-const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null };
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], vorgaenge:[], current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null, currentVorgang:null };
 
 // Teams (Zugehörigkeit) + ob das Team Superadmin werden darf.
 const TEAMS = {
@@ -290,7 +297,7 @@ async function api(path, opts={}){
 async function loadState(){
   const s = await api('/state');
   State.studios = s.studios||[]; State.infrastruktur = s.infrastruktur||[];
-  State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[]; State.users = s.users||[];
+  State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[]; State.users = s.users||[]; State.vorgaenge = s.vorgaenge||[];
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -329,6 +336,7 @@ const Modules = [
   { key:'studios', label:'Studios', icon:'🏢', section:'Übersicht', render:renderStudios, show:canManage },
   { key:'infrastruktur', label:'Infrastruktur', icon:'🔧', section:'Übersicht', render:renderInfrastruktur, show:canManage },
   { key:'bedarf', label:'Bedarfsübersicht', icon:'📋', section:'Übersicht', render:renderBedarf, show:canManage },
+  { key:'vorgaenge', label:'Vorgänge', icon:'🔄', section:'Übersicht', render:renderVorgaenge, show:canManage },
   { key:'kommunikation', label:'Kommunikation', icon:'💬', section:'Austausch', render:renderKommunikation, show:canManage },
   { key:'tools', label:'Tools verwalten', icon:'🧩', section:'Erweitern', render:renderTools, show:canManage },
   { key:'melden', label:'Mangel melden', icon:'⚠️', section:'Melden', render:renderMelden, show:isMelder },
@@ -368,6 +376,8 @@ function navBtn(key,icon,label){
 function navigate(key){
   // Custom-Tools nur für Team-Mitglieder.
   if(key.startsWith('tool:') && !canManage()) key = defaultRoute();
+  // Detailansicht des Vorgangs zurücksetzen, wenn das Modul verlassen wird.
+  if(key!=='vorgaenge') State.currentVorgang=null;
   // Zugriff auf ausgeblendete Module verhindern.
   if(!key.startsWith('tool:')){
     const target = Modules.find(m=>m.key===key);
@@ -1379,6 +1389,299 @@ function renderMeineMeldungen(content, actions){
       <div style="font-size:12px;color:var(--gray-600);margin-top:6px">${s?esc((s.standort?s.standort+' · ':'')+s.name):''}${i.kategorie?' · '+esc(i.kategorie):''} · ${fmtDT(i.erstelltAm)} · ${(i.fotos||[]).length} Foto(s)</div>
     </div>`;
   }).join('')}</div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  VORGÄNGE (Kaskaden) – mehrstufige Abläufe mit Schritten & Rückfragen
+// ════════════════════════════════════════════════════════════════════════════
+const VORGANG_STATUS_META = {
+  offen:{label:'Offen',badge:'badge-gray'},
+  laufend:{label:'Laufend',badge:'badge-blue'},
+  wartet:{label:'Wartet auf Rückmeldung',badge:'badge-yellow'},
+  abgeschlossen:{label:'Abgeschlossen',badge:'badge-green'},
+  abgebrochen:{label:'Abgebrochen',badge:'badge-red'}
+};
+const SCHRITT_STATUS_META = {
+  offen:{label:'Offen',badge:'badge-gray',icon:'⚪'},
+  aktiv:{label:'Aktiv',badge:'badge-blue',icon:'🔵'},
+  erledigt:{label:'Erledigt',badge:'badge-green',icon:'✅'},
+  uebersprungen:{label:'Übersprungen',badge:'badge-gray',icon:'⏭️'}
+};
+const SCHRITT_CYCLE = ['offen','aktiv','erledigt'];
+// Vorlagen-Kaskaden (selbst editierbar nach dem Anlegen).
+const VORGANG_VORLAGEN = {
+  klima:{ label:'❄️ Klimageräte-Beschaffung', kategorie:'Beschaffung', schritte:[
+    'Bedarf erfassen & Studio prüfen','Geräte/Angebot auswählen','Bestellung freigeben (Budget)',
+    'Bestellung ausgelöst','Lieferung erhalten','Montage/Installation terminiert',
+    'Installation durchgeführt','Funktionsprüfung & Abnahme'
+  ]},
+  beschaffung:{ label:'📦 Allgemeine Beschaffung', kategorie:'Beschaffung', schritte:[
+    'Bedarf klären','Angebot einholen','Freigabe einholen','Bestellen','Wareneingang','Abschluss & Dokumentation'
+  ]},
+  wartung:{ label:'🔧 Wartung / Reparatur', kategorie:'Wartung', schritte:[
+    'Problem aufnehmen','Dienstleister beauftragen','Termin vereinbaren','Durchführung','Abnahme'
+  ]},
+  leer:{ label:'🔄 Leerer Vorgang', kategorie:'', schritte:[] }
+};
+
+let vorgangFilter='aktiv';
+
+function vorgangProgress(v){
+  const list=v.schritte||[];
+  const total=list.length;
+  const done=list.filter(s=>s.status==='erledigt'||s.status==='uebersprungen').length;
+  return { total, done, pct: total?Math.round(done/total*100):0 };
+}
+function vorgangIstAktiv(v){ return v.status!=='abgeschlossen' && v.status!=='abgebrochen'; }
+
+function renderVorgaenge(content, actions){
+  if(State.currentVorgang){ renderVorgangDetail(content, actions); return; }
+  actions.innerHTML = `<button class="btn btn-primary" onclick="openVorgangModal()">+ Vorgang</button>`;
+  const all=State.vorgaenge||[];
+  const offeneFragen = all.reduce((n,v)=>n+(v.fragen||[]).filter(f=>!f.antwort).length,0);
+  let list = all.filter(v=> vorgangFilter==='alle' ? true : vorgangFilter==='abgeschlossen' ? !vorgangIstAktiv(v) : vorgangIstAktiv(v));
+  list.sort((a,b)=> new Date(b.geaendertAm||b.erstelltAm)-new Date(a.geaendertAm||a.erstelltAm));
+  const chip=(f,label,n)=>`<button class="btn ${vorgangFilter===f?'btn-primary':'btn-secondary'} btn-sm" onclick="setVorgangFilter('${f}')">${label}${n!=null?' ('+n+')':''}</button>`;
+  const aktivN=all.filter(vorgangIstAktiv).length, abgeschlN=all.length-aktivN;
+  content.innerHTML = `
+    <div class="card"><div class="card-body">
+      <p style="color:var(--gray-600);margin:0 0 10px">Vorgänge bündeln mehrstufige Abläufe als <b>Kaskade</b> – z. B. eine Klimageräte-Beschaffung von der Bedarfserfassung bis zur Abnahme. Jeder Schritt ist selbst aktualisierbar, und es können <b>Rückfragen</b> gestellt werden.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${chip('aktiv','Aktiv',aktivN)} ${chip('abgeschlossen','Abgeschlossen',abgeschlN)} ${chip('alle','Alle',all.length)}
+      ${offeneFragen?`<span class="badge badge-yellow" style="align-self:center">❓ ${offeneFragen} offene Frage(n)</span>`:''}</div>
+    </div></div>
+    <div class="studio-grid">${list.length? list.map(vorgangCard).join('') : emptyState('Keine Vorgänge – oben mit „+ Vorgang" anlegen')}</div>`;
+}
+function setVorgangFilter(f){ vorgangFilter=f; renderVorgaenge(document.getElementById('content'), document.getElementById('topbarActions')); }
+
+function vorgangCard(v){
+  const p=vorgangProgress(v);
+  const st=VORGANG_STATUS_META[v.status]||VORGANG_STATUS_META.offen;
+  const s=v.studioId?studioById(v.studioId):null;
+  const offeneFragen=(v.fragen||[]).filter(f=>!f.antwort).length;
+  return `<div class="studio-card" style="cursor:pointer;border-left-color:var(--fom-primary)" onclick="openVorgang('${v.id}')">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+      <h3 style="margin:0">${esc(v.titel)}</h3>
+      <span class="badge ${st.badge}">${st.label}</span>
+    </div>
+    ${v.kategorie?`<div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc(v.kategorie)}${s?' · '+esc((s.standort?s.standort+' · ':'')+s.name):''}</div>`:s?`<div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc((s.standort?s.standort+' · ':'')+s.name)}</div>`:''}
+    <div style="margin-top:10px">
+      <div style="height:8px;background:var(--gray-200);border-radius:6px;overflow:hidden"><div style="height:100%;width:${p.pct}%;background:var(--fom-primary)"></div></div>
+      <div style="font-size:12px;color:var(--gray-600);margin-top:4px">${p.done}/${p.total} Schritte · ${p.pct}%${offeneFragen?` · <span style="color:#9a6700">❓ ${offeneFragen} Frage(n)</span>`:''}</div>
+    </div>
+  </div>`;
+}
+
+function openVorgang(id){ State.currentVorgang=id; navigate('vorgaenge'); }
+function backToVorgaenge(){ State.currentVorgang=null; navigate('vorgaenge'); }
+function refreshVorgang(){ renderVorgaenge(document.getElementById('content'), document.getElementById('topbarActions')); }
+
+function renderVorgangDetail(content, actions){
+  const v=State.vorgaenge.find(x=>x.id===State.currentVorgang);
+  if(!v){ State.currentVorgang=null; renderVorgaenge(content, actions); return; }
+  actions.innerHTML = `<button class="btn btn-secondary" onclick="backToVorgaenge()">← Zurück</button><button class="btn btn-secondary" onclick="openVorgangModal('${v.id}')">⚙️ Bearbeiten</button>`;
+  const p=vorgangProgress(v);
+  const st=VORGANG_STATUS_META[v.status]||VORGANG_STATUS_META.offen;
+  const s=v.studioId?studioById(v.studioId):null;
+  const schritte=v.schritte||[];
+  const fragen=(v.fragen||[]).slice().sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+
+  const statusSel = Object.entries(VORGANG_STATUS_META).map(([k,m])=>`<option value="${k}"${v.status===k?' selected':''}>${m.label}</option>`).join('');
+
+  const stepRows = schritte.length ? schritte.map((sch,idx)=>{
+    const m=SCHRITT_STATUS_META[sch.status]||SCHRITT_STATUS_META.offen;
+    const over = sch.faelligBis && sch.status!=='erledigt' && sch.status!=='uebersprungen' && new Date(sch.faelligBis+'T23:59:59')<new Date();
+    return `<div class="vg-step ${sch.status==='erledigt'||sch.status==='uebersprungen'?'done':''}">
+      <div class="vg-step-num">${idx+1}</div>
+      <button class="btn-ghost" title="Status weiterschalten" style="font-size:18px;flex:0 0 auto" onclick="cycleSchritt('${v.id}','${sch.id}')">${m.icon}</button>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;${sch.status==='erledigt'?'text-decoration:line-through':''}">${esc(sch.titel)}</div>
+        ${sch.notiz?`<div class="infra-desc" style="margin-top:2px">${esc(sch.notiz)}</div>`:''}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
+          <span class="badge ${m.badge}">${m.label}</span>
+          ${sch.zustaendig?`<span class="badge badge-gray">👤 ${esc(sch.zustaendig)}</span>`:''}
+          ${sch.faelligBis?`<span class="badge ${over?'badge-red':'badge-gray'}">📅 ${fmtD(sch.faelligBis)}${over?' · überfällig':''}</span>`:''}
+          ${sch.erledigtAm?`<span class="badge badge-green">✓ ${fmtD(sch.erledigtAm)}</span>`:''}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0;flex:0 0 auto">
+        <button class="btn-ghost" title="Nach oben" onclick="moveSchritt('${v.id}','${sch.id}',-1)" ${idx===0?'disabled style=\"opacity:.3\"':''}>▲</button>
+        <button class="btn-ghost" title="Nach unten" onclick="moveSchritt('${v.id}','${sch.id}',1)" ${idx===schritte.length-1?'disabled style=\"opacity:.3\"':''}>▼</button>
+      </div>
+      <div style="display:flex;gap:2px;flex:0 0 auto">
+        <button class="btn-ghost" title="Bearbeiten" onclick="openSchrittModal('${v.id}','${sch.id}')">✏️</button>
+        <button class="btn-ghost" title="Löschen" onclick="deleteSchritt('${v.id}','${sch.id}')">🗑️</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty-state" style="padding:20px">Noch keine Schritte – füge unten den ersten Schritt der Kaskade hinzu.</div>`;
+
+  const frageRows = fragen.length ? fragen.map(f=>`
+    <div class="vg-frage ${f.antwort?'':'offen'}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <b>❓ ${esc(f.text)}</b>
+        <button class="btn-ghost" title="Löschen" onclick="deleteFrage('${v.id}','${f.id}')">🗑️</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--gray-400);margin-top:2px">${esc(f.autor||'—')}${f.team?' · '+esc(f.team):''} · ${fmtDT(f.erstelltAm)}</div>
+      ${f.antwort
+        ? `<div class="vg-antwort">💬 ${esc(f.antwort)}<div style="font-size:11.5px;color:var(--gray-400);margin-top:3px">${esc(f.beantwortetVon||'')} · ${fmtDT(f.beantwortetAm)}</div></div>`
+        : `<div style="margin-top:8px;display:flex;gap:6px"><input id="ans_${f.id}" placeholder="Antwort…" style="flex:1"><button class="btn btn-primary btn-sm" onclick="answerFrage('${v.id}','${f.id}')">Antworten</button></div>`}
+    </div>`).join('') : `<div class="empty-state" style="padding:16px">Noch keine Rückfragen</div>`;
+
+  content.innerHTML = `
+    <div class="card"><div class="card-body">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+        <div style="flex:1;min-width:220px">
+          <h2 style="color:var(--fom-primary);margin:0">${esc(v.titel)}</h2>
+          ${v.beschreibung?`<p style="margin:6px 0 0;color:var(--gray-600)">${esc(v.beschreibung)}</p>`:''}
+          <div style="font-size:12.5px;color:var(--gray-600);margin-top:6px">${v.kategorie?esc(v.kategorie):'Vorgang'}${s?' · '+esc((s.standort?s.standort+' · ':'')+s.name):''} · erstellt ${fmtD(v.erstelltAm)}</div>
+        </div>
+        <div style="text-align:right">
+          <label style="font-size:11.5px;color:var(--gray-400);font-weight:600;display:block;margin-bottom:4px">STATUS</label>
+          <select onchange="setVorgangStatus('${v.id}',this.value)" style="min-width:200px">${statusSel}</select>
+        </div>
+      </div>
+      <div style="margin-top:14px;max-width:520px">
+        <div style="height:10px;background:var(--gray-200);border-radius:6px;overflow:hidden"><div style="height:100%;width:${p.pct}%;background:var(--fom-primary)"></div></div>
+        <div style="font-size:12.5px;color:var(--gray-600);margin-top:5px">${p.done} von ${p.total} Schritten erledigt (${p.pct}%)</div>
+      </div>
+    </div></div>
+
+    <div class="card"><div class="card-header"><div class="card-title">🪜 Kaskade – Schritte</div><button class="btn btn-primary btn-sm" onclick="openSchrittModal('${v.id}')">+ Schritt</button></div>
+      <div class="card-body"><div class="vg-steps">${stepRows}</div></div>
+    </div>
+
+    <div class="card"><div class="card-header"><div class="card-title">❓ Rückfragen</div></div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;margin-bottom:14px">
+          <input id="vg_neue_frage" placeholder="Frage zum Vorgang stellen…" style="flex:1" onkeydown="if(event.key==='Enter')addFrage('${v.id}')">
+          <button class="btn btn-primary" onclick="addFrage('${v.id}')">Fragen</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">${frageRows}</div>
+      </div>
+    </div>`;
+}
+
+// ── Vorgang anlegen/bearbeiten ───────────────────────────────────────────────
+function openVorgangModal(id){
+  const v = id ? State.vorgaenge.find(x=>x.id===id) : {};
+  const edit=!!id;
+  const studioOpts = State.studios.slice().sort((a,b)=>(a.standort||'').localeCompare(b.standort||'','de'))
+    .map(s=>`<option value="${s.id}"${v.studioId===s.id?' selected':''}>${esc(s.standort?s.standort+' · ':'')}${esc(s.name)}</option>`).join('');
+  const vorlagenOpts = Object.entries(VORGANG_VORLAGEN).map(([k,vl])=>`<option value="${k}">${esc(vl.label)}</option>`).join('');
+  const body=`
+    <div class="form-row"><label>Titel *</label><input id="vg_titel" value="${esc(v.titel||'')}" placeholder="z.B. Klimageräte für Studio AC/PUS1 bestellen"></div>
+    <div class="form-row"><label>Beschreibung</label><textarea id="vg_desc">${esc(v.beschreibung||'')}</textarea></div>
+    <div class="form-grid">
+      <div class="form-row"><label>Kategorie</label><input id="vg_kat" value="${esc(v.kategorie||'')}" placeholder="z.B. Beschaffung"></div>
+      <div class="form-row"><label>Studio (optional)</label><select id="vg_studio"><option value="">— keins —</option>${studioOpts}</select></div>
+    </div>
+    ${edit?'':`<div class="form-row"><label>Vorlage (Kaskade)</label><select id="vg_vorlage" onchange="syncVorlageKat()">${vorlagenOpts}</select><span style="font-size:12px;color:var(--gray-400)">Die Schritte werden vorbefüllt und sind danach frei editierbar.</span></div>`}`;
+  openModal(edit?'Vorgang bearbeiten':'Neuer Vorgang', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Anlegen',cls:'btn-primary',fn:()=>saveVorgang(id)}
+  ]);
+}
+function syncVorlageKat(){
+  const k=document.getElementById('vg_vorlage')?.value; const vl=VORGANG_VORLAGEN[k];
+  const kat=document.getElementById('vg_kat');
+  if(vl && kat && !kat.value) kat.value=vl.kategorie;
+}
+async function saveVorgang(id){
+  const payload={
+    titel:val('vg_titel'), beschreibung:val('vg_desc'), kategorie:val('vg_kat'),
+    studioId:document.getElementById('vg_studio').value||''
+  };
+  if(!payload.titel){ toast('Titel ist erforderlich','error'); return; }
+  try{
+    if(id){
+      await api('/vorgaenge/'+id,{method:'PUT',body:JSON.stringify(payload)});
+    } else {
+      payload.status='offen';
+      const created=await api('/vorgaenge',{method:'POST',body:JSON.stringify(payload)});
+      const vlKey=document.getElementById('vg_vorlage')?.value;
+      const vl=VORGANG_VORLAGEN[vlKey];
+      if(vl && vl.schritte.length){
+        for(const titel of vl.schritte){
+          await api('/vorgaenge/'+created.id+'/schritte',{method:'POST',body:JSON.stringify({titel})});
+        }
+      }
+      State.currentVorgang=created.id;
+    }
+    await loadState(); closeModal(); buildNav();
+    navigate('vorgaenge'); toast('Gespeichert','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+async function setVorgangStatus(id,status){
+  try{ await api('/vorgaenge/'+id,{method:'PUT',body:JSON.stringify({status})}); await loadState(); refreshVorgang(); }
+  catch(e){ toast(e.message,'error'); }
+}
+
+// ── Schritte (Kaskade) ───────────────────────────────────────────────────────
+function openSchrittModal(vid, sid){
+  const v=State.vorgaenge.find(x=>x.id===vid); if(!v) return;
+  const sch = sid ? (v.schritte||[]).find(x=>x.id===sid)||{} : {};
+  const edit=!!sid;
+  const statusSel=Object.entries(SCHRITT_STATUS_META).map(([k,m])=>`<option value="${k}"${(sch.status||'offen')===k?' selected':''}>${m.label}</option>`).join('');
+  const body=`
+    <div class="form-row"><label>Schritt *</label><input id="sc_titel" value="${esc(sch.titel||'')}" placeholder="z.B. Bestellung freigeben"></div>
+    <div class="form-row"><label>Notiz</label><textarea id="sc_notiz">${esc(sch.notiz||'')}</textarea></div>
+    <div class="form-grid">
+      <div class="form-row"><label>Status</label><select id="sc_status">${statusSel}</select></div>
+      <div class="form-row"><label>Zuständig</label><input id="sc_zust" value="${esc(sch.zustaendig||'')}" placeholder="Name / Team"></div>
+    </div>
+    <div class="form-row"><label>Fällig bis</label><input type="date" id="sc_faellig" value="${esc(sch.faelligBis||'')}"></div>`;
+  openModal(edit?'Schritt bearbeiten':'Neuer Schritt', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Hinzufügen',cls:'btn-primary',fn:()=>saveSchritt(vid,sid)}
+  ]);
+}
+async function saveSchritt(vid,sid){
+  const payload={ titel:val('sc_titel'), notiz:val('sc_notiz'),
+    status:document.getElementById('sc_status').value, zustaendig:val('sc_zust'), faelligBis:val('sc_faellig') };
+  if(!payload.titel){ toast('Titel ist erforderlich','error'); return; }
+  try{
+    if(sid) await api('/vorgaenge/'+vid+'/schritte/'+sid,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/vorgaenge/'+vid+'/schritte',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); refreshVorgang(); toast('Gespeichert','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+async function cycleSchritt(vid,sid){
+  const v=State.vorgaenge.find(x=>x.id===vid); const sch=(v.schritte||[]).find(x=>x.id===sid); if(!sch) return;
+  const cur=SCHRITT_CYCLE.indexOf(sch.status);
+  const next=SCHRITT_CYCLE[(cur+1)%SCHRITT_CYCLE.length] || 'offen';
+  try{ await api('/vorgaenge/'+vid+'/schritte/'+sid,{method:'PUT',body:JSON.stringify({status:next})}); await loadState(); refreshVorgang(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function moveSchritt(vid,sid,dir){
+  const v=State.vorgaenge.find(x=>x.id===vid); const list=(v.schritte||[]).map(s=>s.id);
+  const i=list.indexOf(sid); const j=i+dir;
+  if(i<0||j<0||j>=list.length) return;
+  list.splice(j,0,list.splice(i,1)[0]);
+  try{ await api('/vorgaenge/'+vid+'/schritte-sortieren',{method:'PUT',body:JSON.stringify({reihenfolge:list})}); await loadState(); refreshVorgang(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function deleteSchritt(vid,sid){
+  if(!confirm('Schritt löschen?')) return;
+  try{ await api('/vorgaenge/'+vid+'/schritte/'+sid,{method:'DELETE'}); await loadState(); refreshVorgang(); toast('Gelöscht','success'); }
+  catch(e){ toast(e.message,'error'); }
+}
+
+// ── Rückfragen ───────────────────────────────────────────────────────────────
+async function addFrage(vid){
+  const inp=document.getElementById('vg_neue_frage'); const text=(inp?.value||'').trim();
+  if(!text){ toast('Bitte eine Frage eingeben','error'); return; }
+  try{ await api('/vorgaenge/'+vid+'/fragen',{method:'POST',body:JSON.stringify({text,autor:Me.name,team:Me.team})}); await loadState(); refreshVorgang(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function answerFrage(vid,fid){
+  const inp=document.getElementById('ans_'+fid); const antwort=(inp?.value||'').trim();
+  if(!antwort){ toast('Bitte eine Antwort eingeben','error'); return; }
+  try{ await api('/vorgaenge/'+vid+'/fragen/'+fid,{method:'PUT',body:JSON.stringify({antwort,beantwortetVon:Me.team+' – '+Me.name})}); await loadState(); refreshVorgang(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function deleteFrage(vid,fid){
+  if(!confirm('Frage löschen?')) return;
+  try{ await api('/vorgaenge/'+vid+'/fragen/'+fid,{method:'DELETE'}); await loadState(); refreshVorgang(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 // Utils
