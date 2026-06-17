@@ -25,8 +25,83 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ───────────────────────────────────────────────────────────────────────────
+//  BCW-Verzeichnis (Active Directory / LDAP) – optionale Personensuche
+// ───────────────────────────────────────────────────────────────────────────
+// Aktiv, sobald die Umgebungsvariablen gesetzt sind. Die Suche bindet mit einem
+// dedizierten, lesenden Service-Account ans AD und liefert Treffer für die
+// Benutzeranlage. Ohne Konfiguration bleibt die manuelle Anlage unverändert.
+const AD_URL = process.env.AD_URL || '';
+const AD_SUFFIX = process.env.AD_SUFFIX || 'dc=bcw-intern,dc=local';
+const AD_DOMAIN = process.env.AD_DOMAIN || 'BCW-INTERN';
+const AD_BIND_USER = process.env.AD_BIND_USER || ''; // z.B. svc-dlsportal
+const AD_BIND_PASS = process.env.AD_BIND_PASS || '';
+const AD_ENABLED = !!(AD_URL && AD_BIND_USER && AD_BIND_PASS);
+
+let LdapClient = null;
+if (AD_ENABLED) {
+  try {
+    ({ Client: LdapClient } = require('ldapts'));
+  } catch (e) {
+    console.warn('ldapts nicht verfügbar – BCW-Suche deaktiviert:', e.message);
+  }
+}
+
+// Sucht Personen im AD (Service-Account-Bind). Liefert max. 15 Treffer.
+async function ldapSearch(query) {
+  if (!AD_ENABLED || !LdapClient) throw new Error('BCW-Verzeichnis ist nicht konfiguriert');
+  const q = String(query || '').trim();
+  // Eingabe entschärfen (LDAP-Filter-Sonderzeichen escapen).
+  const esc = (s) =>
+    s.replace(/[\\*()\u0000]/g, (c) => '\\' + c.charCodeAt(0).toString(16).padStart(2, '0'));
+  const safe = esc(q);
+  const filter = q.includes('.')
+    ? `(|(sAMAccountName=${safe})(mail=${safe}*)(displayName=*${safe}*))`
+    : `(|(sAMAccountName=*${safe}*)(displayName=*${safe}*)(givenName=*${safe}*)(sn=*${safe}*))`;
+  const client = new LdapClient({
+    url: AD_URL,
+    connectTimeout: 5000,
+    timeout: 8000,
+    tlsOptions: { rejectUnauthorized: false },
+  });
+  try {
+    await client.bind(`${AD_BIND_USER}@${AD_DOMAIN}`, AD_BIND_PASS);
+    const { searchEntries } = await client.search(AD_SUFFIX, {
+      scope: 'sub',
+      filter,
+      sizeLimit: 15,
+      attributes: ['sAMAccountName', 'displayName', 'givenName', 'sn', 'mail', 'department', 'title'],
+    });
+    return searchEntries
+      .filter((e) => e.sAMAccountName)
+      .map((e) => ({
+        sAMAccountName: String(e.sAMAccountName || ''),
+        displayName: String(e.displayName || ''),
+        givenName: String(e.givenName || ''),
+        sn: String(e.sn || ''),
+        mail: String(e.mail || ''),
+        department: String(e.department || ''),
+        title: String(e.title || ''),
+      }));
+  } finally {
+    try {
+      await client.unbind();
+    } catch (_) {
+      /* ignorieren */
+    }
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 //  Persistenz
 // ───────────────────────────────────────────────────────────────────────────
+// Standard-Kanäle für das Kommunikationstool (Teams-artige Themen-Kanäle).
+const DEFAULT_KANAELE = [
+  { id: 'kan_allg', name: 'Allgemein', icon: '💬', beschreibung: 'Allgemeiner Austausch', system: true },
+  { id: 'kan_stoerung', name: 'Störungen & Dringend', icon: '🚨', beschreibung: 'Akute Probleme & Eskalationen', system: true },
+  { id: 'kan_klima', name: 'Klima & Technik', icon: '❄️', beschreibung: 'Klima, Technik, Medientechnik', system: true },
+  { id: 'kan_orga', name: 'Organisation', icon: '🗂️', beschreibung: 'Termine, Abstimmungen, Orga', system: true },
+];
+
 function ensureDb() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -35,6 +110,18 @@ function ensureDb() {
       ? JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'))
       : { studios: [], infrastruktur: [], nachrichten: [], tools: [] };
     fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
+  }
+  // Standard-Kanäle einmalig nachziehen (Migration für bestehende Datenbanken).
+  try {
+    const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    if (!Array.isArray(db.kanaele) || db.kanaele.length === 0) {
+      db.kanaele = DEFAULT_KANAELE.slice();
+      const tmp = DB_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+      fs.renameSync(tmp, DB_FILE);
+    }
+  } catch (_) {
+    /* ignorieren */
   }
 }
 
@@ -245,6 +332,9 @@ app.post('/api/users', (req, res) => {
     vorname: req.body.vorname.trim(),
     nachname: req.body.nachname.trim(),
     team: req.body.team,
+    email: (req.body.email || '').trim(),
+    adUser: (req.body.adUser || '').trim().toLowerCase(),
+    abteilung: (req.body.abteilung || '').trim(),
     superadmin: !!req.body.superadmin && SUPER_ALLOWED.includes(req.body.team),
     aktiv: req.body.aktiv !== false,
     erstelltAm: nowIso(),
@@ -277,6 +367,9 @@ app.put('/api/users/:id', (req, res) => {
     vorname: merged.vorname.trim(),
     nachname: merged.nachname.trim(),
     team: merged.team,
+    email: (merged.email || '').trim(),
+    adUser: (merged.adUser || '').trim().toLowerCase(),
+    abteilung: (merged.abteilung || '').trim(),
     superadmin: nextSuper,
     aktiv: merged.aktiv !== false,
     geaendertAm: nowIso(),
@@ -319,6 +412,52 @@ app.use(
   })
 );
 
+// ─── Kommunikation: Helfer ──────────────────────────────────────────────────
+const QUICK_EMOJIS = ['👍', '❤️', '✅', '🙏', '👀', '🎉', '😮'];
+function findNachricht(db, id) {
+  return (db.nachrichten || []).find((n) => n.id === id);
+}
+function actorName(actor) {
+  return actor ? `${actor.vorname} ${actor.nachname}`.trim() : 'System';
+}
+// Speichert einen Nachrichten-Anhang (Bild oder PDF) auf der Platte.
+function saveDataUrlFile(dataUrl) {
+  const m = /^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/i.exec(dataUrl || '');
+  if (!m) return null;
+  const mime = m[1].toLowerCase();
+  const allowed = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'application/pdf': 'pdf',
+  };
+  const ext = allowed[mime];
+  if (!ext) return null;
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length || buf.length > 12 * 1024 * 1024) return null; // 12 MB Limit
+  const fname = uid('anh') + '.' + ext;
+  fs.writeFileSync(path.join(UPLOADS_DIR, fname), buf);
+  return { fname, mime, ext };
+}
+
+// Eigene/gelöschte Nachrichten: geschützter DELETE vor dem generischen CRUD.
+app.delete('/api/nachrichten/:id', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  const actor = getActor(db, req);
+  if (n.autorId && actor && n.autorId !== actor.id && !actor.superadmin)
+    return res.status(403).json({ error: 'Nur der Verfasser darf die Nachricht löschen.' });
+  const replies = (db.nachrichten || []).filter((r) => r.parentId === n.id);
+  (n.anhaenge || []).forEach((a) => deleteUploadFile(a.datei));
+  replies.forEach((r) => (r.anhaenge || []).forEach((a) => deleteUploadFile(a.datei)));
+  db.nachrichten = (db.nachrichten || []).filter((r) => r.id !== n.id && r.parentId !== n.id);
+  writeDb(db);
+  res.json({ ok: true });
+});
+
 app.use(
   '/api/nachrichten',
   makeCrud('nachrichten', {
@@ -326,6 +465,130 @@ app.use(
     validate: (b) => (!b.text ? 'Text ist erforderlich' : null),
   })
 );
+
+// Themen-Kanäle des Kommunikationstools.
+// Geschütztes Löschen: System-Kanäle bleiben bestehen, Nachrichten wandern nach kan_allg.
+app.delete('/api/kanaele/:id', (req, res) => {
+  const db = readDb();
+  db.kanaele = db.kanaele || [];
+  const kanal = db.kanaele.find((k) => k.id === req.params.id);
+  if (!kanal) return res.status(404).json({ error: 'Kanal nicht gefunden' });
+  if (kanal.system) return res.status(400).json({ error: 'System-Kanäle können nicht gelöscht werden' });
+  (db.nachrichten || []).forEach((n) => {
+    if (n.kanalId === kanal.id) n.kanalId = 'kan_allg';
+  });
+  db.kanaele = db.kanaele.filter((k) => k.id !== kanal.id);
+  writeDb(db);
+  res.json({ ok: true });
+});
+
+app.use(
+  '/api/kanaele',
+  makeCrud('kanaele', {
+    idPrefix: 'kan',
+    validate: (b) => (!b.name ? 'Name ist erforderlich' : null),
+  })
+);
+
+// Reaktion (Emoji) togglen.
+app.post('/api/nachrichten/:id/reaktion', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  const emoji = (req.body.emoji || '').trim();
+  if (!QUICK_EMOJIS.includes(emoji)) return res.status(400).json({ error: 'Ungültige Reaktion' });
+  const actor = getActor(db, req);
+  n.reaktionen = n.reaktionen || [];
+  const i = n.reaktionen.findIndex((r) => r.emoji === emoji && r.userId === actor.id);
+  if (i >= 0) n.reaktionen.splice(i, 1);
+  else n.reaktionen.push({ emoji, userId: actor.id, name: actorName(actor) });
+  n.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(n);
+});
+
+// Anhang (Bild/PDF) hinzufügen.
+app.post('/api/nachrichten/:id/anhaenge', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  const saved = saveDataUrlFile(req.body.dataUrl);
+  if (!saved)
+    return res
+      .status(400)
+      .json({ error: 'Ungültige oder zu große Datei (erlaubt: Bilder/PDF, max 12 MB)' });
+  n.anhaenge = n.anhaenge || [];
+  const att = {
+    id: uid('anh'),
+    name: (req.body.name || saved.fname).toString().slice(0, 120),
+    datei: saved.fname,
+    mime: saved.mime,
+    hochgeladenAm: nowIso(),
+  };
+  n.anhaenge.push(att);
+  n.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(att);
+});
+
+// Anhang löschen.
+app.delete('/api/nachrichten/:id/anhaenge/:aid', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  const list = n.anhaenge || [];
+  const idx = list.findIndex((a) => a.id === req.params.aid);
+  if (idx === -1) return res.status(404).json({ error: 'Anhang nicht gefunden' });
+  deleteUploadFile(list[idx].datei);
+  list.splice(idx, 1);
+  n.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true });
+});
+
+// Als erledigt/gelöst markieren.
+app.post('/api/nachrichten/:id/erledigt', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  const actor = getActor(db, req);
+  const done = !!req.body.erledigt;
+  n.erledigt = done;
+  n.erledigtVon = done ? actorName(actor) : null;
+  n.erledigtAm = done ? nowIso() : null;
+  n.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(n);
+});
+
+// Anpinnen / lösen.
+app.post('/api/nachrichten/:id/pin', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  n.angepinnt = !!req.body.angepinnt;
+  n.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(n);
+});
+
+// Eigenen Nachrichtentext bearbeiten.
+app.put('/api/nachrichten/:id/text', (req, res) => {
+  const db = readDb();
+  const n = findNachricht(db, req.params.id);
+  if (!n) return res.status(404).json({ error: 'Nicht gefunden' });
+  const actor = getActor(db, req);
+  const text = (req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Text ist erforderlich' });
+  if (n.autorId && actor && n.autorId !== actor.id && !actor.superadmin)
+    return res.status(403).json({ error: 'Nur der Verfasser darf die Nachricht bearbeiten.' });
+  n.text = text;
+  if (Array.isArray(req.body.mentions)) n.mentions = req.body.mentions;
+  n.bearbeitetAm = nowIso();
+  n.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(n);
+});
 
 // Registry erweiterbarer Tools/Module.
 app.use(
@@ -974,7 +1237,25 @@ function finishWithFooter(doc, M, PAGE_W, PAGE_H, contentW, pageCount) {
 
 // Gesamter Zustand auf einen Schlag (für initiales Laden des Frontends).
 app.get('/api/state', (req, res) => {
-  res.json(readDb());
+  res.json({ ...readDb(), adEnabled: AD_ENABLED });
+});
+
+// BCW-Verzeichnissuche (nur Superadmins; GET umgeht die Schreib-Middleware).
+app.get('/api/ad/search', async (req, res) => {
+  const db = readDb();
+  const actor = getActor(db, req);
+  if (!actor || actor.aktiv === false) return res.status(401).json({ error: 'Bitte anmelden.' });
+  if (!actor.superadmin)
+    return res.status(403).json({ error: 'Nur Superadmins dürfen das BCW-Verzeichnis durchsuchen.' });
+  if (!AD_ENABLED) return res.status(503).json({ error: 'BCW-Verzeichnis (AD) ist nicht konfiguriert.' });
+  const q = (req.query.q || '').toString().trim();
+  if (q.length < 2) return res.status(400).json({ error: 'Bitte mindestens 2 Zeichen eingeben.' });
+  try {
+    res.json(await ldapSearch(q));
+  } catch (e) {
+    console.error('BCW-Suche fehlgeschlagen:', e.message);
+    res.status(500).json({ error: 'BCW-Suche fehlgeschlagen: ' + e.message });
+  }
 });
 
 // Health-Check.

@@ -21,6 +21,7 @@
   "private": true,
   "dependencies": {
     "express": "^4.19.2",
+    "ldapts": "^7.4.0",
     "pdfkit": "^0.19.1"
   },
   "devDependencies": {

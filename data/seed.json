@@ -2784,5 +2784,35 @@
     }
   ],
   "users": [],
-  "vorgaenge": []
+  "vorgaenge": [],
+  "kanaele": [
+    {
+      "id": "kan_allg",
+      "name": "Allgemein",
+      "icon": "💬",
+      "beschreibung": "Allgemeiner Austausch",
+      "system": true
+    },
+    {
+      "id": "kan_stoerung",
+      "name": "Störungen & Dringend",
+      "icon": "🚨",
+      "beschreibung": "Akute Probleme & Eskalationen",
+      "system": true
+    },
+    {
+      "id": "kan_klima",
+      "name": "Klima & Technik",
+      "icon": "❄️",
+      "beschreibung": "Klima, Technik, Medientechnik",
+      "system": true
+    },
+    {
+      "id": "kan_orga",
+      "name": "Organisation",
+      "icon": "🗂️",
+      "beschreibung": "Termine, Abstimmungen, Orga",
+      "system": true
+    }
+  ]
 }

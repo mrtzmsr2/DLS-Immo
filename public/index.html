@@ -181,6 +181,56 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 .vg-frage{padding:12px 14px;border:1px solid var(--gray-200);border-radius:10px;background:var(--gray-50)}
 .vg-frage.offen{border-left:4px solid #ffc107}
 .vg-antwort{margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--gray-200);border-radius:8px;font-size:13.5px}
+/* ── Kommunikationstool ───────────────────────────────────────────────── */
+.kom-channels{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.kanal-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--gray-200);border-radius:999px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;color:var(--gray-700);transition:all .15s}
+.kanal-chip:hover{border-color:var(--fom-primary);background:var(--gray-50)}
+.kanal-chip.active{background:var(--fom-gradient);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(0,191,179,.3)}
+.kanal-count{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:var(--gray-100);color:var(--gray-600);font-size:11px;font-weight:700}
+.kanal-chip.active .kanal-count{background:rgba(255,255,255,.28);color:#fff}
+.kanal-add{font-weight:700;color:var(--fom-primary-dark);border-style:dashed}
+.pin-bar{background:var(--yellow-bg,#fff8e1);border:1px solid #ffe39e;border-radius:10px;padding:8px 10px;margin-bottom:12px}
+.pin-bar-title{font-size:11.5px;font-weight:700;color:#9a7400;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.pin-item{display:block;width:100%;text-align:left;background:none;border:none;border-radius:6px;padding:4px 6px;font-family:inherit;font-size:12.5px;color:var(--gray-700);cursor:pointer}
+.pin-item:hover{background:rgba(255,227,158,.45)}
+.kom-feed{max-height:none}
+.msg-card .msg-bubble{flex:1;min-width:0}
+.msg-card.done .msg-text{text-decoration:none;opacity:.75}
+.msg-actions{display:inline-flex;gap:1px;margin-left:auto;flex-wrap:wrap}
+.msg-actions .btn-ghost{padding:2px 5px;font-size:13px;line-height:1}
+.msg-edited{font-size:11.5px;color:var(--gray-400);font-style:italic}
+.msg-resolved{margin-top:6px;font-size:12px;color:#1a8a4a;font-weight:600}
+.msg-edit textarea{width:100%;min-height:64px}
+.mention{background:rgba(0,191,179,.14);color:var(--fom-primary-dark);font-weight:600;border-radius:4px;padding:0 3px}
+.reaktionen{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center}
+.reaktion{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border:1px solid var(--gray-200);border-radius:999px;background:#fff;cursor:pointer;font-family:inherit;font-size:12.5px;line-height:1.6;transition:all .12s}
+.reaktion:hover{border-color:var(--fom-primary)}
+.reaktion.mine{background:rgba(0,191,179,.12);border-color:var(--fom-primary)}
+.reaktion.add{color:var(--gray-500)}
+.emoji-picker{display:inline-flex;gap:2px;padding:3px 5px;border:1px solid var(--gray-200);border-radius:999px;background:#fff;box-shadow:var(--shadow,0 2px 8px rgba(0,0,0,.08))}
+.emoji-picker button{background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;border-radius:6px;line-height:1}
+.emoji-picker button:hover{background:var(--gray-100)}
+.anhaenge{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.anh-img{position:relative;width:120px;height:90px;border-radius:8px;overflow:hidden;border:1px solid var(--gray-200)}
+.anh-img img{width:100%;height:100%;object-fit:cover;cursor:pointer;display:block}
+.anh-file{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-50);font-size:12.5px}
+.anh-file a{color:var(--fom-primary-dark);text-decoration:none}
+.anh-del{position:absolute;top:3px;right:3px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;cursor:pointer;font-size:14px;line-height:1}
+.anh-file .anh-del{position:static;width:18px;height:18px;background:var(--gray-300);color:#fff}
+.kom-composer-row{display:flex;gap:8px;flex-wrap:wrap}
+.kom-composer-row select{max-width:200px}
+.kom-pending{display:flex;flex-wrap:wrap;gap:6px}
+.kom-pend-item{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--gray-200);border-radius:999px;background:var(--gray-50);font-size:12px}
+.kom-pend-item button{background:none;border:none;cursor:pointer;color:var(--gray-500);font-size:15px;line-height:1}
+.msg.flash .msg-bubble{animation:flashMsg 1.4s ease}
+@keyframes flashMsg{0%,40%{background:rgba(0,191,179,.16)}100%{background:transparent}}
+.ad-search{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:12px;margin-bottom:14px}
+.ad-search>label{display:block;font-weight:600;font-size:12.5px;margin-bottom:7px;color:var(--gray-700)}
+.ad-results{margin-top:8px;display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:auto}
+.ad-item{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;padding:7px 10px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px}
+.ad-item:hover{border-color:var(--fom-primary);background:var(--gray-50)}
+.ad-hint{font-size:12.5px;color:var(--gray-500);padding:4px 2px}
+@media(max-width:680px){.hide-sm{display:none}.kom-composer-row select{max-width:none;flex:1}}
 
 /* Misc */
 .page{display:none}.page.active{display:block}
@@ -260,7 +310,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 // ════════════════════════════════════════════════════════════════════════════
 //  STATE & API
 // ════════════════════════════════════════════════════════════════════════════
-const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], vorgaenge:[], current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null, currentVorgang:null };
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], vorgaenge:[], kanaele:[], adEnabled:false, current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null, currentVorgang:null, currentKanal:'kan_allg', editingMsg:null, reactPickerFor:null };
+// Anhänge, die einer neuen Nachricht beim Senden beigefügt werden.
+let komPending = [];
 
 // Teams (Zugehörigkeit) + ob das Team Superadmin werden darf.
 const TEAMS = {
@@ -298,6 +350,7 @@ async function loadState(){
   const s = await api('/state');
   State.studios = s.studios||[]; State.infrastruktur = s.infrastruktur||[];
   State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[]; State.users = s.users||[]; State.vorgaenge = s.vorgaenge||[];
+  State.kanaele = s.kanaele||[]; State.adEnabled = !!s.adEnabled;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -626,10 +679,9 @@ function openMangel(id){
   const mf=document.getElementById('mangelFeed'); if(mf) mf.scrollTop=mf.scrollHeight;
 }
 function komItem(k){
-  const team=k.team==='DLS'?'badge-blue':(k.team==='Immo'?'badge-green':'badge-gray');
   return `<div class="msg team-${esc(k.team||'')}">
     <div class="msg-avatar">${initials(k.autor)}</div>
-    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(k.autor||'—')}</span>${k.team?`<span class="badge ${team}">${esc(k.team)}</span>`:''}${k.typ==='status'?'<span class="badge badge-purple">Status</span>':''}<span class="msg-time">${fmtDT(k.erstelltAm)}</span><button class="btn-ghost" style="margin-left:auto" onclick="deleteMangelKom('${State.currentMangel}','${k.id}')" title="Löschen">🗑️</button></div><div class="msg-text">${esc(k.text)}</div></div>
+    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(k.autor||'—')}</span>${msgTeamBadge(k.team)}${k.typ==='status'?'<span class="badge badge-purple">Status</span>':''}<span class="msg-time">${fmtDT(k.erstelltAm)}</span><button class="btn-ghost" style="margin-left:auto" onclick="deleteMangelKom('${State.currentMangel}','${k.id}')" title="Löschen">🗑️</button></div><div class="msg-text">${esc(k.text)}</div></div>
   </div>`;
 }
 async function sendMangelKom(id){
@@ -666,12 +718,24 @@ async function deleteInfraFoto(id,fid){
   catch(e){ toast(e.message,'error'); }
 }
 function ausrBadge(a){ const x=AUSREICHEND[a]; return x?`<span class="badge ${x.badge}">${x.label}</span>`:''; }
+// Team-Farbe anhand des Kurzlabels (DLS/Immo/IT/Medien/Standort).
+function teamColorByShort(short){
+  switch((short||'').toString().toLowerCase()){
+    case 'dls': return 'badge-blue';
+    case 'immo': return 'badge-green';
+    case 'it': return 'badge-purple';
+    case 'medien': return 'badge-yellow';
+    case 'standort': return 'badge-gray';
+    default: return 'badge-gray';
+  }
+}
+function msgTeamBadge(short){ return short?`<span class="badge ${teamColorByShort(short)}">${esc(short)}</span>`:''; }
 function msgBubble(n,clickable){
   const replies=clickable?State.nachrichten.filter(r=>r.parentId===n.id):[];
   const info=clickable?`<div class="msg-thread-info">${replies.length?`💬 ${replies.length} Antwort${replies.length>1?'en':''}`:'↪︎ Antworten'}</div>`:'';
   return `<div class="msg team-${esc(n.team)}${clickable?' msg-clickable':''}"${clickable?` onclick="openThread('${n.id}')" title="Öffnen & antworten"`:''}>
     <div class="msg-avatar">${initials(n.autor)}</div>
-    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div>${info}</div>
+    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span>${msgTeamBadge(n.team)}${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div>${info}</div>
   </div>`;
 }
 
@@ -752,68 +816,285 @@ function renderBedarf(content){
     }).join('') : emptyState('Kein offener Bedarf 🎉')}`;
 }
 // ════════════════════════════════════════════════════════════════════════════
-//  KOMMUNIKATION
+//  KOMMUNIKATION – Kanäle, Reaktionen, @Erwähnungen, Anhänge, Pin, Erledigt
 // ════════════════════════════════════════════════════════════════════════════
+const QUICK_EMOJIS = ['👍','❤️','✅','🙏','👀','🎉','😮'];
+const STUDIO_ALL = '__alle__';
+
+function kanalById(id){ return State.kanaele.find(k=>k.id===id) || null; }
+function aktiveKanaele(){
+  const list = State.kanaele.slice();
+  return list.length ? list : [{id:'kan_allg',name:'Allgemein',icon:'💬',system:true}];
+}
+function kanalOfMsg(n){ return n.kanalId || 'kan_allg'; }
+function canEditMsg(n){ return isSuperadmin() || (!!n.autorId && n.autorId===Me.id); }
+
 function renderKommunikation(content){
-  const msgs = [...State.nachrichten].filter(n=>!n.parentId).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const kanaele = aktiveKanaele();
+  if(!kanalById(State.currentKanal)) State.currentKanal = kanaele[0].id;
+  const kanal = kanalById(State.currentKanal) || kanaele[0];
+  const roots = State.nachrichten.filter(n=>!n.parentId && kanalOfMsg(n)===kanal.id);
+  const sorted = roots.slice().sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
+  const pinned = sorted.filter(n=>n.angepinnt);
+  const channelBar = kanaele.map(k=>{
+    const cnt = State.nachrichten.filter(n=>!n.parentId && kanalOfMsg(n)===k.id).length;
+    return `<button class="kanal-chip ${k.id===kanal.id?'active':''}" onclick="setKanal('${k.id}')" title="${esc(k.beschreibung||'')}">
+      <span>${k.icon||'💬'}</span><span>${esc(k.name)}</span><span class="kanal-count">${cnt}</span>
+    </button>`;
+  }).join('');
   content.innerHTML = `
+    <div class="kom-channels">
+      ${channelBar}
+      <button class="kanal-chip kanal-add" onclick="openKanalModal()" title="Kanal anlegen">＋ Kanal</button>
+    </div>
     <div class="card">
-      <div class="card-header"><span class="card-title">💬 Gemeinsamer Verlauf</span><span class="badge badge-gray">${msgs.length} Themen</span></div>
-      <div class="card-body">
-        <div class="feed" id="feed">${msgs.length? msgs.map(n=>{
-          const st=studioById(n.studioId);
-          const replies=State.nachrichten.filter(r=>r.parentId===n.id);
-          const last=replies.length?replies.reduce((a,b)=>new Date(a.erstelltAm)>new Date(b.erstelltAm)?a:b):null;
-          return `<div class="msg team-${esc(n.team)} msg-clickable" onclick="openThread('${n.id}')" title="Öffnen & antworten"><div class="msg-avatar">${initials(n.autor)}</div>
-            <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span><span class="badge ${n.team==='DLS'?'badge-blue':'badge-green'}">${esc(n.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(n.erstelltAm)}</span></div><div class="msg-text">${esc(n.text)}</div>
-            <div class="msg-thread-info">${replies.length?`💬 ${replies.length} Antwort${replies.length>1?'en':''} · zuletzt ${fmtDT(last.erstelltAm)} von ${esc(last.autor)}`:'↪︎ Antworten'}</div></div></div>`;
-        }).join('') : emptyState('Noch keine Meldungen – starte die Kommunikation!')}</div>
-        <div class="composer">
-          <div style="display:flex;flex-direction:column;gap:8px;flex:1">
-            <div style="display:flex;gap:8px">
-              <select id="komStudio" style="max-width:200px"><option value="">Allgemein (kein Studio)</option>${State.studios.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
-              <select id="komTyp" style="max-width:150px"><option value="info">Info</option><option value="wichtig">Wichtig</option></select>
-            </div>
-            <textarea id="komText" placeholder="Neues Thema / Nachricht an das andere Team..."></textarea>
-          </div>
-          <button class="btn btn-primary" onclick="sendKom()">Senden</button>
+      <div class="card-header">
+        <span class="card-title">${kanal.icon||'💬'} ${esc(kanal.name)}</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${kanal.beschreibung?`<span style="font-size:12.5px;color:var(--gray-500)" class="hide-sm">${esc(kanal.beschreibung)}</span>`:''}
+          ${!kanal.system?`<button class="btn-ghost" onclick="openKanalModal('${kanal.id}')" title="Kanal bearbeiten">✏️</button><button class="btn-ghost" onclick="deleteKanal('${kanal.id}')" title="Kanal löschen">🗑️</button>`:''}
+          <span class="badge badge-gray">${sorted.length} Themen</span>
         </div>
+      </div>
+      <div class="card-body">
+        ${pinned.length?`<div class="pin-bar"><div class="pin-bar-title">📌 Angepinnt</div>${pinned.map(n=>`<button class="pin-item" onclick="scrollToMsg('${n.id}')"><b>${esc(n.autor)}:</b> ${esc((n.text||'').slice(0,80))}${(n.text||'').length>80?'…':''}</button>`).join('')}</div>`:''}
+        <div class="feed kom-feed" id="feed">${sorted.length? sorted.map(n=>msgCard(n,{thread:true})).join('') : emptyState('Noch keine Nachrichten in diesem Kanal – starte die Kommunikation!')}</div>
+        ${composerHtml()}
       </div>
     </div>`;
   const feed=document.getElementById('feed'); if(feed) feed.scrollTop=feed.scrollHeight;
 }
+function setKanal(id){ State.currentKanal=id; State.editingMsg=null; State.reactPickerFor=null; renderKommunikation(document.getElementById('content')); }
+
+function composerHtml(){
+  const studioOpts = `<option value="">Allgemein (kein Studio)</option><option value="${STUDIO_ALL}">🏢 Alle Studios</option>`+
+    State.studios.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','de')).map(s=>`<option value="${s.id}">${esc(s.standort?s.standort+' · ':'')}${esc(s.name)}</option>`).join('');
+  const mentionOpts = `<option value="">@ erwähnen…</option>`+
+    State.users.filter(u=>u.aktiv!==false).sort((a,b)=>userFullName(a).localeCompare(userFullName(b),'de')).map(u=>`<option value="${esc(userFullName(u))}">${esc(userFullName(u))}${TEAMS[u.team]?' · '+TEAMS[u.team].short:''}</option>`).join('');
+  const pend = komPending.length?`<div class="kom-pending">${komPending.map((p,i)=>`<span class="kom-pend-item">${p.isImg?'🖼️':'📎'} ${esc(p.name)} <button onclick="komRemovePending(${i})" title="Entfernen">×</button></span>`).join('')}</div>`:'';
+  return `<div class="composer kom-composer">
+    <div style="display:flex;flex-direction:column;gap:8px;flex:1">
+      <div class="kom-composer-row">
+        <select id="komStudio" title="Studio-Bezug">${studioOpts}</select>
+        <select id="komTyp" title="Wichtigkeit"><option value="info">Info</option><option value="wichtig">Wichtig</option></select>
+        <select id="komMention" onchange="komInsertMention(this)" title="Person erwähnen">${mentionOpts}</select>
+        <button class="btn btn-secondary btn-sm" type="button" onclick="komPickFile()" title="Bild/PDF anhängen">📎 Anhang</button>
+      </div>
+      ${pend}
+      <textarea id="komText" placeholder="Neue Nachricht im Kanal „${esc((kanalById(State.currentKanal)||{}).name||'')}“ … (@ erwähnt Personen)"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="sendKom()">Senden</button>
+  </div>`;
+}
+
+// Einheitliches Nachrichten-Rendering (Kanal-Feed & Thread).
+function msgCard(n, opts={}){
+  const st = n.studioId===STUDIO_ALL ? null : studioById(n.studioId);
+  const replies = State.nachrichten.filter(r=>r.parentId===n.id);
+  const editing = State.editingMsg===n.id;
+  const studioBadge = n.studioId===STUDIO_ALL ? `<span class="badge badge-blue">🏢 Alle Studios</span>` : (st?`<span class="badge badge-gray">${esc(st.name)}</span>`:'');
+  const badges = `${msgTeamBadge(n.team)}${studioBadge}${n.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}${n.erledigt?'<span class="badge badge-green">✓ Erledigt</span>':''}${n.angepinnt?'<span class="badge badge-yellow">📌</span>':''}`;
+  const edited = n.bearbeitetAm?`<span class="msg-edited" title="Bearbeitet ${fmtDT(n.bearbeitetAm)}">· bearbeitet</span>`:'';
+  const textBlock = editing
+    ? `<div class="msg-edit"><textarea id="editText_${n.id}">${esc(n.text)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="saveEditMsg('${n.id}')">Speichern</button><button class="btn btn-secondary btn-sm" onclick="cancelEdit()">Abbrechen</button></div></div>`
+    : `<div class="msg-text">${mentionize(n.text)}</div>`;
+  const resolveInfo = n.erledigt&&n.erledigtVon?`<div class="msg-resolved">✓ Erledigt von ${esc(n.erledigtVon)} · ${fmtDT(n.erledigtAm)}</div>`:'';
+  const actions = `<div class="msg-actions">
+    ${opts.thread?`<button class="btn-ghost" onclick="openThread('${n.id}')" title="Antworten">💬 ${replies.length||''}</button>`:''}
+    <button class="btn-ghost" onclick="togglePin('${n.id}',${!n.angepinnt})" title="${n.angepinnt?'Loslösen':'Anpinnen'}">📌</button>
+    <button class="btn-ghost" onclick="toggleErledigtMsg('${n.id}',${!n.erledigt})" title="${n.erledigt?'Wieder öffnen':'Als erledigt markieren'}">${n.erledigt?'↩️':'✅'}</button>
+    ${canEditMsg(n)?`<button class="btn-ghost" onclick="startEditMsg('${n.id}')" title="Bearbeiten">✏️</button>`:''}
+    ${canEditMsg(n)?`<button class="btn-ghost" onclick="deleteMsg('${n.id}')" title="Löschen">🗑️</button>`:''}
+  </div>`;
+  return `<div class="msg team-${esc(n.team)} msg-card${n.erledigt?' done':''}" id="msg_${n.id}">
+    <div class="msg-avatar">${initials(n.autor)}</div>
+    <div class="msg-bubble">
+      <div class="msg-meta"><span class="msg-author">${esc(n.autor)}</span>${badges}<span class="msg-time">${fmtDT(n.erstelltAm)}</span>${edited}${actions}</div>
+      ${textBlock}
+      ${attachmentsHtml(n)}
+      ${resolveInfo}
+      ${reactionsHtml(n)}
+      ${opts.thread&&replies.length?`<button class="msg-thread-info" onclick="openThread('${n.id}')">💬 ${replies.length} Antwort${replies.length>1?'en':''} – Thread öffnen</button>`:''}
+    </div>
+  </div>`;
+}
+function mentionize(text){
+  let html = esc(text||'');
+  State.users.forEach(u=>{
+    const name = userFullName(u); if(!name) return;
+    const safe = name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    html = html.replace(new RegExp('@'+safe,'g'), `<span class="mention">@${esc(name)}</span>`);
+  });
+  return html;
+}
+function reactionsHtml(n){
+  const groups={};
+  (n.reaktionen||[]).forEach(r=>{ (groups[r.emoji]=groups[r.emoji]||[]).push(r); });
+  const chips = Object.entries(groups).map(([emo,arr])=>{
+    const mine = arr.some(r=>r.userId===Me.id);
+    return `<button class="reaktion ${mine?'mine':''}" title="${esc(arr.map(r=>r.name).join(', '))}" onclick="toggleReaktion('${n.id}','${emo}')">${emo} ${arr.length}</button>`;
+  }).join('');
+  const picker = State.reactPickerFor===n.id
+    ? `<span class="emoji-picker">${QUICK_EMOJIS.map(e=>`<button onclick="toggleReaktion('${n.id}','${e}')">${e}</button>`).join('')}</span>`
+    : '';
+  return `<div class="reaktionen">${chips}<button class="reaktion add" title="Reagieren" onclick="toggleReactPicker('${n.id}')">🙂﹢</button>${picker}</div>`;
+}
+function attachmentsHtml(n){
+  const list=n.anhaenge||[]; if(!list.length) return '';
+  return `<div class="anhaenge">${list.map(a=>{
+    const url='/uploads/'+esc(a.datei);
+    const isImg=(a.mime||'').startsWith('image/');
+    const del = canEditMsg(n)?`<button class="anh-del" onclick="deleteAnhang('${n.id}','${a.id}')" title="Anhang löschen">×</button>`:'';
+    return isImg
+      ? `<div class="anh-img"><img src="${url}" alt="${esc(a.name)}" onclick="openLightbox('${url}','${esc(a.name)}')">${del}</div>`
+      : `<div class="anh-file"><a href="${url}" target="_blank" rel="noopener">📎 ${esc(a.name)}</a>${del}</div>`;
+  }).join('')}</div>`;
+}
+
+function rerenderKom(){
+  const draft = document.getElementById('komText')?.value;
+  if(State.current==='kommunikation'){ renderKommunikation(document.getElementById('content')); if(draft!=null){ const t=document.getElementById('komText'); if(t) t.value=draft; } }
+  if(State.currentThread && document.getElementById('overlay')?.classList.contains('open')) openThread(State.currentThread);
+}
+function toggleReactPicker(id){ State.reactPickerFor = State.reactPickerFor===id?null:id; rerenderKom(); }
+async function toggleReaktion(id,emoji){
+  State.reactPickerFor=null;
+  try{ await api('/nachrichten/'+id+'/reaktion',{method:'POST',body:JSON.stringify({emoji})}); await loadState(); rerenderKom(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function togglePin(id,val){ try{ await api('/nachrichten/'+id+'/pin',{method:'POST',body:JSON.stringify({angepinnt:val})}); await loadState(); rerenderKom(); }catch(e){ toast(e.message,'error'); } }
+async function toggleErledigtMsg(id,val){ try{ await api('/nachrichten/'+id+'/erledigt',{method:'POST',body:JSON.stringify({erledigt:val})}); await loadState(); toast(val?'Als erledigt markiert':'Wieder geöffnet','success'); rerenderKom(); }catch(e){ toast(e.message,'error'); } }
+function startEditMsg(id){ State.editingMsg=id; rerenderKom(); setTimeout(()=>{const t=document.getElementById('editText_'+id); if(t){t.focus();t.setSelectionRange(t.value.length,t.value.length);}},30); }
+function cancelEdit(){ State.editingMsg=null; rerenderKom(); }
+async function saveEditMsg(id){
+  const t=document.getElementById('editText_'+id); const text=(t?.value||'').trim(); if(!text) return;
+  try{ await api('/nachrichten/'+id+'/text',{method:'PUT',body:JSON.stringify({text,mentions:parseMentions(text)})}); State.editingMsg=null; await loadState(); rerenderKom(); toast('Aktualisiert','success'); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function deleteMsg(id){
+  if(!confirm('Diese Nachricht (inkl. Antworten) löschen?')) return;
+  try{ await api('/nachrichten/'+id,{method:'DELETE'}); const wasThread=State.currentThread===id; if(wasThread){ State.currentThread=null; closeModal(); } await loadState(); rerenderKom(); toast('Gelöscht','success'); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function deleteAnhang(id,aid){
+  if(!confirm('Anhang löschen?')) return;
+  try{ await api('/nachrichten/'+id+'/anhaenge/'+aid,{method:'DELETE'}); await loadState(); rerenderKom(); }
+  catch(e){ toast(e.message,'error'); }
+}
+function scrollToMsg(id){ const el=document.getElementById('msg_'+id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),1500); } }
+
+function parseMentions(text){
+  const ids=[];
+  State.users.forEach(u=>{ const name=userFullName(u); if(name && text.includes('@'+name)) ids.push(u.id); });
+  return ids;
+}
+function komInsertMention(sel){
+  const name=sel.value; sel.selectedIndex=0; if(!name) return;
+  const ta=document.getElementById('komText'); if(!ta) return;
+  const ins='@'+name+' ';
+  const start=ta.selectionStart!=null?ta.selectionStart:ta.value.length;
+  ta.value = ta.value.slice(0,start)+ins+ta.value.slice(start);
+  ta.focus(); ta.setSelectionRange(start+ins.length,start+ins.length);
+}
+function komPickFile(){
+  if(!requireUser()) return;
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*,application/pdf';
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return;
+    if(file.size>12*1024*1024){ toast('Datei zu groß (max 12 MB)','error'); return; }
+    const isImg=file.type.startsWith('image/');
+    try{
+      const dataUrl = isImg ? await resizeImage(file,1600,0.82) : await fileToDataUrl(file);
+      komPending.push({name:file.name,dataUrl,isImg});
+      rerenderKom();
+    }catch(e){ toast('Datei konnte nicht gelesen werden','error'); }
+  };
+  inp.click();
+}
+function komRemovePending(i){ komPending.splice(i,1); rerenderKom(); }
+function fileToDataUrl(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+
 async function sendKom(){
   if(!requireUser()) return;
-  const text=document.getElementById('komText').value.trim(); if(!text) return;
+  const text=document.getElementById('komText').value.trim();
+  if(!text && !komPending.length) return;
   const studioId=document.getElementById('komStudio').value||null;
   const typ=document.getElementById('komTyp').value;
-  await api('/nachrichten',{method:'POST',body:JSON.stringify({text,studioId,typ,team:Me.team,autor:Me.name})});
-  await loadState(); toast('Gesendet','success'); renderKommunikation(document.getElementById('content'));
+  try{
+    const msg=await api('/nachrichten',{method:'POST',body:JSON.stringify({
+      text:text||'(Anhang)', studioId, typ, kanalId:State.currentKanal,
+      team:Me.team, autor:Me.name, autorId:Me.id, mentions:parseMentions(text)
+    })});
+    for(const p of komPending){
+      try{ await api('/nachrichten/'+msg.id+'/anhaenge',{method:'POST',body:JSON.stringify({name:p.name,dataUrl:p.dataUrl})}); }
+      catch(e){ toast('Anhang '+p.name+': '+e.message,'error'); }
+    }
+    komPending=[];
+    await loadState(); toast('Gesendet','success'); renderKommunikation(document.getElementById('content'));
+  }catch(e){ toast(e.message,'error'); }
+}
+
+// ── Kanäle verwalten ────────────────────────────────────────────────────────
+function openKanalModal(id){
+  const k = id? kanalById(id) : {};
+  const edit=!!id;
+  const body=`
+    <div class="form-grid">
+      <div class="form-row"><label>Name *</label><input id="kn_name" value="${esc(k.name||'')}" placeholder="z.B. Standort Essen"></div>
+      <div class="form-row"><label>Icon (Emoji)</label><input id="kn_icon" value="${esc(k.icon||'💬')}" placeholder="💬"></div>
+    </div>
+    <div class="form-row"><label>Beschreibung</label><input id="kn_desc" value="${esc(k.beschreibung||'')}" placeholder="Worum geht es in diesem Kanal?"></div>`;
+  openModal(edit?'Kanal bearbeiten':'Neuer Kanal', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Anlegen',cls:'btn-primary',fn:()=>saveKanal(id)}
+  ]);
+}
+async function saveKanal(id){
+  const payload={name:val('kn_name'),icon:val('kn_icon')||'💬',beschreibung:val('kn_desc')};
+  if(!payload.name){ toast('Name ist erforderlich','error'); return; }
+  try{
+    const k = id ? await api('/kanaele/'+id,{method:'PUT',body:JSON.stringify(payload)})
+                 : await api('/kanaele',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); if(k&&k.id) State.currentKanal=k.id;
+    renderKommunikation(document.getElementById('content')); toast('Gespeichert','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+async function deleteKanal(id){
+  const k=kanalById(id); if(!k) return;
+  if(k.system){ toast('Standard-Kanäle können nicht gelöscht werden','error'); return; }
+  const count=State.nachrichten.filter(n=>kanalOfMsg(n)===id).length;
+  if(!confirm(`Kanal „${k.name}" löschen?${count?` ${count} Nachricht(en) wandern nach „Allgemein".`:''}`)) return;
+  try{
+    const betroffen=State.nachrichten.filter(n=>n.kanalId===id);
+    for(const n of betroffen){ try{ await api('/nachrichten/'+n.id,{method:'PUT',body:JSON.stringify({kanalId:'kan_allg'})}); }catch(_){} }
+    await api('/kanaele/'+id,{method:'DELETE'});
+    State.currentKanal='kan_allg';
+    await loadState(); renderKommunikation(document.getElementById('content')); toast('Kanal gelöscht','success');
+  }catch(e){ toast(e.message,'error'); }
 }
 
 // Einzelner Chat-Thread zu einer Nachricht
 function openThread(msgId){
-  const root=State.nachrichten.find(n=>n.id===msgId); if(!root) return;
+  const root=State.nachrichten.find(n=>n.id===msgId); if(!root){ closeModal(); return; }
   State.currentThread=msgId;
-  const st=studioById(root.studioId);
   const replies=State.nachrichten.filter(r=>r.parentId===msgId).sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
-  const head=`<div class="thread-root msg team-${esc(root.team)}"><div class="msg-avatar">${initials(root.autor)}</div>
-    <div class="msg-bubble"><div class="msg-meta"><span class="msg-author">${esc(root.autor)}</span><span class="badge ${root.team==='DLS'?'badge-blue':'badge-green'}">${esc(root.team)}</span>${st?`<span class="badge badge-gray">${esc(st.name)}</span>`:''}${root.typ==='wichtig'?'<span class="badge badge-red">Wichtig</span>':''}<span class="msg-time">${fmtDT(root.erstelltAm)}</span></div><div class="msg-text">${esc(root.text)}</div></div></div>`;
-  const body=`${head}
+  const body=`
+    <div class="thread-root">${msgCard(root,{thread:false})}</div>
     <div class="section-title">Antworten (${replies.length})</div>
-    <div class="feed" id="threadFeed" style="max-height:46vh">${replies.length? replies.map(msgBubble).join('') : '<div class="empty-state" style="padding:16px">Noch keine Antworten</div>'}</div>
+    <div class="feed" id="threadFeed" style="max-height:42vh">${replies.length? replies.map(r=>msgCard(r,{thread:false})).join('') : '<div class="empty-state" style="padding:16px">Noch keine Antworten</div>'}</div>
     <div class="composer">
-      <textarea id="threadText" placeholder="Antwort schreiben..."></textarea>
+      <textarea id="threadText" placeholder="Antwort schreiben… (@ erwähnt Personen)"></textarea>
       <button class="btn btn-primary" onclick="sendThreadReply('${msgId}')">Antworten</button>
     </div>`;
-  openModal('💬 Thread', body, [{label:'Schließen',cls:'btn-secondary',fn:closeModal}], 'modal-wide');
+  openModal('💬 Thread', body, [{label:'Schließen',cls:'btn-secondary',fn:()=>{State.currentThread=null;closeModal();}}], 'modal-wide');
   const tf=document.getElementById('threadFeed'); if(tf) tf.scrollTop=tf.scrollHeight;
 }
 async function sendThreadReply(parentId){
   if(!requireUser()) return;
   const ta=document.getElementById('threadText'); const text=(ta.value||'').trim(); if(!text) return;
   const root=State.nachrichten.find(n=>n.id===parentId);
-  await api('/nachrichten',{method:'POST',body:JSON.stringify({text,parentId,studioId:root?root.studioId:null,typ:'info',team:Me.team,autor:Me.name})});
+  await api('/nachrichten',{method:'POST',body:JSON.stringify({text,parentId,studioId:root?root.studioId:null,kanalId:root?kanalOfMsg(root):State.currentKanal,typ:'info',team:Me.team,autor:Me.name,autorId:Me.id,mentions:parseMentions(text)})});
   await loadState(); toast('Antwort gesendet','success'); openThread(parentId);
   if(State.current==='kommunikation') renderKommunikation(document.getElementById('content'));
 }
@@ -1281,11 +1562,26 @@ function openUserEditModal(id){
   const u = id ? State.users.find(x=>x.id===id) : {};
   const edit=!!id;
   const teamOpts=Object.entries(TEAMS).map(([k,v])=>`<option value="${k}"${u.team===k?' selected':''}>${esc(v.label)}</option>`).join('');
+  const adBlock = State.adEnabled ? `
+    <div class="ad-search">
+      <label>🔍 Aus BCW-Verzeichnis (AD) übernehmen</label>
+      <div style="display:flex;gap:8px">
+        <input id="us_adsearch" placeholder="Vor-/Nachname oder vorname.nachname…" onkeydown="if(event.key==='Enter'){event.preventDefault();searchADUser();}">
+        <button class="btn btn-secondary btn-sm" type="button" onclick="searchADUser()">Suchen</button>
+      </div>
+      <div id="us_adresults" class="ad-results"></div>
+    </div>` : '';
   const body=`
+    ${adBlock}
     <div class="form-grid">
       <div class="form-row"><label>Vorname *</label><input id="us_vorname" value="${esc(u.vorname||'')}" placeholder="Vorname"></div>
       <div class="form-row"><label>Nachname *</label><input id="us_nachname" value="${esc(u.nachname||'')}" placeholder="Nachname"></div>
     </div>
+    <div class="form-grid">
+      <div class="form-row"><label>E-Mail</label><input id="us_email" value="${esc(u.email||'')}" placeholder="name@bcw-gruppe.de"></div>
+      <div class="form-row"><label>Abteilung</label><input id="us_abteilung" value="${esc(u.abteilung||'')}" placeholder="optional"></div>
+    </div>
+    <input type="hidden" id="us_aduser" value="${esc(u.adUser||'')}">
     <div class="form-row"><label>Team / Berechtigungsebene *</label><select id="us_team" onchange="syncSuperToggle()">${teamOpts}</select></div>
     <div class="form-row" id="us_super_row"><label><input type="checkbox" id="us_super" ${u.superadmin?'checked':''} style="width:auto;margin-right:6px"> Superadmin (volle Rechte – nur DLS &amp; Immo)</label></div>
     <div class="form-row"><label><input type="checkbox" id="us_aktiv" ${u.aktiv!==false?'checked':''} style="width:auto;margin-right:6px"> Aktiv (darf sich anmelden)</label></div>`;
@@ -1294,6 +1590,30 @@ function openUserEditModal(id){
     {label:edit?'Speichern':'Anlegen',cls:'btn-primary',fn:()=>saveUser(id)}
   ]);
   syncSuperToggle();
+}
+let adResults=[];
+function setVal(id,v){ const el=document.getElementById(id); if(el) el.value=v||''; }
+async function searchADUser(){
+  const q=(document.getElementById('us_adsearch')?.value||'').trim();
+  const box=document.getElementById('us_adresults'); if(!box) return;
+  if(q.length<2){ box.innerHTML='<div class="ad-hint">Bitte mind. 2 Zeichen eingeben.</div>'; return; }
+  box.innerHTML='<div class="ad-hint">Suche im BCW-Verzeichnis…</div>';
+  try{
+    const users=await api('/ad/search?q='+encodeURIComponent(q));
+    adResults=users||[];
+    if(!adResults.length){ box.innerHTML='<div class="ad-hint">Kein Treffer im Verzeichnis.</div>'; return; }
+    box.innerHTML=adResults.map((u,i)=>`<button type="button" class="ad-item" onclick="selectADUser(${i})">
+      <span><b>${esc(u.displayName||u.sAMAccountName)}</b> <span style="color:var(--gray-400)">${esc(u.sAMAccountName)}</span></span>
+      <span style="color:var(--gray-400);font-size:12px">${esc(u.department||'')}</span>
+    </button>`).join('');
+  }catch(e){ box.innerHTML='<div class="ad-hint" style="color:#d33">'+esc(e.message)+'</div>'; }
+}
+function selectADUser(i){
+  const d=adResults[i]; if(!d) return;
+  setVal('us_vorname',d.givenName); setVal('us_nachname',d.sn);
+  setVal('us_email',d.mail); setVal('us_abteilung',d.department); setVal('us_aduser',d.sAMAccountName);
+  const box=document.getElementById('us_adresults');
+  if(box) box.innerHTML='<div class="ad-hint" style="color:#1a8a4a">✓ Übernommen: '+esc(d.displayName||((d.givenName||'')+' '+(d.sn||'')))+'</div>';
 }
 function syncSuperToggle(){
   const team=document.getElementById('us_team')?.value;
@@ -1307,6 +1627,7 @@ async function saveUser(id){
   const payload={
     vorname:val('us_vorname'), nachname:val('us_nachname'),
     team:document.getElementById('us_team').value,
+    email:val('us_email'), abteilung:val('us_abteilung'), adUser:val('us_aduser'),
     superadmin:document.getElementById('us_super').checked,
     aktiv:document.getElementById('us_aktiv').checked
   };
