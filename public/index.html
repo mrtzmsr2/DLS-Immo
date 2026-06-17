@@ -1775,17 +1775,22 @@ function renderVorgaenge(content, actions){
 }
 function setVorgangFilter(f){ vorgangFilter=f; renderVorgaenge(document.getElementById('content'), document.getElementById('topbarActions')); }
 
+function vorgangStudioName(v){
+  if(v.studioId===STUDIO_ALL) return '🏢 Alle Studios';
+  const s=v.studioId?studioById(v.studioId):null;
+  return s?((s.standort?s.standort+' · ':'')+s.name):'';
+}
 function vorgangCard(v){
   const p=vorgangProgress(v);
   const st=VORGANG_STATUS_META[v.status]||VORGANG_STATUS_META.offen;
-  const s=v.studioId?studioById(v.studioId):null;
+  const sName=vorgangStudioName(v);
   const offeneFragen=(v.fragen||[]).filter(f=>!f.antwort).length;
   return `<div class="studio-card" style="cursor:pointer;border-left-color:var(--fom-primary)" onclick="openVorgang('${v.id}')">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
       <h3 style="margin:0">${esc(v.titel)}</h3>
       <span class="badge ${st.badge}">${st.label}</span>
     </div>
-    ${v.kategorie?`<div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc(v.kategorie)}${s?' · '+esc((s.standort?s.standort+' · ':'')+s.name):''}</div>`:s?`<div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc((s.standort?s.standort+' · ':'')+s.name)}</div>`:''}
+    ${v.kategorie?`<div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc(v.kategorie)}${sName?' · '+esc(sName):''}</div>`:sName?`<div style="font-size:12px;color:var(--gray-600);margin-top:2px">${esc(sName)}</div>`:''}
     <div style="margin-top:10px">
       <div style="height:8px;background:var(--gray-200);border-radius:6px;overflow:hidden"><div style="height:100%;width:${p.pct}%;background:var(--fom-primary)"></div></div>
       <div style="font-size:12px;color:var(--gray-600);margin-top:4px">${p.done}/${p.total} Schritte · ${p.pct}%${offeneFragen?` · <span style="color:#9a6700">❓ ${offeneFragen} Frage(n)</span>`:''}</div>
@@ -1803,7 +1808,7 @@ function renderVorgangDetail(content, actions){
   actions.innerHTML = `<button class="btn btn-secondary" onclick="backToVorgaenge()">← Zurück</button><button class="btn btn-secondary" onclick="openVorgangModal('${v.id}')">⚙️ Bearbeiten</button>`;
   const p=vorgangProgress(v);
   const st=VORGANG_STATUS_META[v.status]||VORGANG_STATUS_META.offen;
-  const s=v.studioId?studioById(v.studioId):null;
+  const sName=vorgangStudioName(v);
   const schritte=v.schritte||[];
   const fragen=(v.fragen||[]).slice().sort((a,b)=>new Date(a.erstelltAm)-new Date(b.erstelltAm));
 
@@ -1854,7 +1859,7 @@ function renderVorgangDetail(content, actions){
         <div style="flex:1;min-width:220px">
           <h2 style="color:var(--fom-primary);margin:0">${esc(v.titel)}</h2>
           ${v.beschreibung?`<p style="margin:6px 0 0;color:var(--gray-600)">${esc(v.beschreibung)}</p>`:''}
-          <div style="font-size:12.5px;color:var(--gray-600);margin-top:6px">${v.kategorie?esc(v.kategorie):'Vorgang'}${s?' · '+esc((s.standort?s.standort+' · ':'')+s.name):''} · erstellt ${fmtD(v.erstelltAm)}</div>
+          <div style="font-size:12.5px;color:var(--gray-600);margin-top:6px">${v.kategorie?esc(v.kategorie):'Vorgang'}${sName?' · '+esc(sName):''} · erstellt ${fmtD(v.erstelltAm)}</div>
         </div>
         <div style="text-align:right">
           <label style="font-size:11.5px;color:var(--gray-400);font-weight:600;display:block;margin-bottom:4px">STATUS</label>
@@ -1894,7 +1899,7 @@ function openVorgangModal(id){
     <div class="form-row"><label>Beschreibung</label><textarea id="vg_desc">${esc(v.beschreibung||'')}</textarea></div>
     <div class="form-grid">
       <div class="form-row"><label>Kategorie</label><input id="vg_kat" value="${esc(v.kategorie||'')}" placeholder="z.B. Beschaffung"></div>
-      <div class="form-row"><label>Studio (optional)</label><select id="vg_studio"><option value="">— keins —</option>${studioOpts}</select></div>
+      <div class="form-row"><label>Studio (optional)</label><select id="vg_studio"><option value="">— keins —</option><option value="${STUDIO_ALL}"${v.studioId===STUDIO_ALL?' selected':''}>🏢 Alle Studios</option>${studioOpts}</select></div>
     </div>
     ${edit?'':`<div class="form-row"><label>Vorlage (Kaskade)</label><select id="vg_vorlage" onchange="syncVorlageKat()">${vorlagenOpts}</select><span style="font-size:12px;color:var(--gray-400)">Die Schritte werden vorbefüllt und sind danach frei editierbar.</span></div>`}`;
   openModal(edit?'Vorgang bearbeiten':'Neuer Vorgang', body, [
