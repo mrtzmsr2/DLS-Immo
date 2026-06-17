@@ -154,6 +154,152 @@ function makeCrud(collection, { idPrefix, validate }) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+//  Benutzer & Berechtigungen
+// ───────────────────────────────────────────────────────────────────────────
+// Teams (Zugehörigkeit) und Regel, welche Teams Superadmin werden dürfen.
+const TEAM_CODES = ['standort', 'dls', 'it', 'medien', 'immo'];
+const SUPER_ALLOWED = ['dls', 'immo'];
+
+function validateUser(b) {
+  if (!b || !(b.vorname || '').trim()) return 'Vorname ist erforderlich';
+  if (!(b.nachname || '').trim()) return 'Nachname ist erforderlich';
+  if (!TEAM_CODES.includes(b.team)) return 'Ungültiges Team';
+  if (b.superadmin && !SUPER_ALLOWED.includes(b.team))
+    return 'Superadmin-Rechte sind nur für DLS oder Immobilienmanagement erlaubt';
+  return null;
+}
+
+function getActor(db, req) {
+  const id = (req.header('X-Acting-User') || '').trim();
+  if (!id) return null;
+  return (db.users || []).find((u) => u.id === id) || null;
+}
+
+function countActiveSuperadmins(users, exceptId) {
+  return (users || []).filter(
+    (u) => u.superadmin && u.aktiv !== false && u.id !== exceptId
+  ).length;
+}
+
+// Zentrale Berechtigungsprüfung für alle schreibenden API-Zugriffe.
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next();
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+
+  const sub = req.path.slice(4); // Pfad ohne führendes "/api"
+  const db = readDb();
+  const users = db.users || [];
+
+  // Bootstrap: Solange kein Benutzer existiert, darf der erste (Super-)Admin angelegt werden.
+  if (users.length === 0 && req.method === 'POST' && sub === '/users') return next();
+
+  const actor = getActor(db, req);
+  if (!actor) return res.status(401).json({ error: 'Bitte zuerst anmelden.' });
+  if (actor.aktiv === false) return res.status(403).json({ error: 'Dieser Benutzer ist deaktiviert.' });
+
+  // Benutzerverwaltung nur für Superadmins.
+  if (sub === '/users' || sub.startsWith('/users/')) {
+    if (!actor.superadmin)
+      return res.status(403).json({ error: 'Nur Superadmins dürfen Benutzer verwalten.' });
+    return next();
+  }
+
+  // Superadmins dürfen alles Übrige.
+  if (actor.superadmin) return next();
+
+  // Standort-Melder dürfen ausschließlich Mängel melden (+ Fotos/Kommentare dazu).
+  if (actor.team === 'standort') {
+    const ok =
+      req.method === 'POST' &&
+      (sub === '/infrastruktur' ||
+        /^\/infrastruktur\/[^/]+\/(fotos|kommentare)$/.test(sub));
+    if (!ok)
+      return res
+        .status(403)
+        .json({ error: 'Standort-Melder dürfen ausschließlich Mängel melden.' });
+    return next();
+  }
+
+  // Reguläre Team-Mitglieder (DLS/IT/Medien/Immo): voller operativer Zugriff.
+  return next();
+});
+
+// Benutzer auflisten (für Login-Auswahl und Verwaltung).
+app.get('/api/users', (req, res) => {
+  res.json(readDb().users || []);
+});
+
+app.post('/api/users', (req, res) => {
+  const db = readDb();
+  const err = validateUser(req.body);
+  if (err) return res.status(400).json({ error: err });
+  db.users = db.users || [];
+  const dup = db.users.find(
+    (u) =>
+      u.vorname.trim().toLowerCase() === req.body.vorname.trim().toLowerCase() &&
+      u.nachname.trim().toLowerCase() === req.body.nachname.trim().toLowerCase()
+  );
+  if (dup) return res.status(400).json({ error: 'Benutzer mit diesem Namen existiert bereits.' });
+  const user = {
+    id: uid('usr'),
+    vorname: req.body.vorname.trim(),
+    nachname: req.body.nachname.trim(),
+    team: req.body.team,
+    superadmin: !!req.body.superadmin && SUPER_ALLOWED.includes(req.body.team),
+    aktiv: req.body.aktiv !== false,
+    erstelltAm: nowIso(),
+    geaendertAm: nowIso(),
+  };
+  db.users.push(user);
+  writeDb(db);
+  res.status(201).json(user);
+});
+
+app.put('/api/users/:id', (req, res) => {
+  const db = readDb();
+  const list = db.users || [];
+  const idx = list.findIndex((u) => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  const merged = { ...list[idx], ...req.body };
+  const err = validateUser(merged);
+  if (err) return res.status(400).json({ error: err });
+  const nextSuper = !!merged.superadmin && SUPER_ALLOWED.includes(merged.team);
+  const wouldDeactivate = req.body.aktiv === false || !nextSuper;
+  // Aussperren verhindern: mindestens ein aktiver Superadmin muss bestehen bleiben.
+  if (list[idx].superadmin && list[idx].aktiv !== false && wouldDeactivate) {
+    if (countActiveSuperadmins(list, list[idx].id) === 0)
+      return res
+        .status(400)
+        .json({ error: 'Mindestens ein aktiver Superadmin muss erhalten bleiben.' });
+  }
+  list[idx] = {
+    ...list[idx],
+    vorname: merged.vorname.trim(),
+    nachname: merged.nachname.trim(),
+    team: merged.team,
+    superadmin: nextSuper,
+    aktiv: merged.aktiv !== false,
+    geaendertAm: nowIso(),
+  };
+  writeDb(db);
+  res.json(list[idx]);
+});
+
+app.delete('/api/users/:id', (req, res) => {
+  const db = readDb();
+  const list = db.users || [];
+  const idx = list.findIndex((u) => u.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  if (list[idx].superadmin && list[idx].aktiv !== false && countActiveSuperadmins(list, list[idx].id) === 0)
+    return res
+      .status(400)
+      .json({ error: 'Der letzte aktive Superadmin kann nicht gelöscht werden.' });
+  const [removed] = list.splice(idx, 1);
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 //  API-Routen
 // ───────────────────────────────────────────────────────────────────────────
 app.use(
@@ -449,6 +595,25 @@ app.get('/api/export/excel', (req, res) => {
   res.send(buf);
 });
 
+// FOM-Farbpalette für den PDF-Export.
+const FOM = {
+  primary: '#00bfb3',
+  primaryDark: '#008c82',
+  primaryLight: '#00d9cc',
+  bandText: '#dffffb',
+  ink: '#2c333b',
+  muted: '#5a626d',
+  faint: '#8b92a0',
+  border: '#dde2e7',
+  cardBg: '#fbfdfd',
+};
+const STATUS_COLOR = {
+  kritisch: '#dc3545',
+  handlungsbedarf: '#fd7e14',
+  provisorisch: '#d39e00',
+  ok: '#28a745',
+};
+
 app.get('/api/export/pdf', (req, res) => {
   const standort = (req.query.standort || '').trim();
   const rows = buildReportRows(standort);
@@ -456,67 +621,198 @@ app.get('/api/export/pdf', (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fname.replace(/[^\w.\-]/g, '_')}"`);
 
-  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
   doc.pipe(res);
 
-  doc.fillColor('#008c82').fontSize(20).text('Mängelbericht', { continued: false });
-  doc
-    .fillColor('#5a626d')
-    .fontSize(11)
-    .text(`Standort: ${standort || 'Alle Standorte'}`)
-    .text(`Erstellt: ${new Date().toLocaleString('de-DE')}`)
-    .text(`Einträge: ${rows.length}`);
-  doc.moveDown(0.6);
+  // Seiten zählen (bufferPages() existiert in dieser pdfkit-Version nicht).
+  let pageCount = 1;
+  doc.on('pageAdded', () => {
+    pageCount++;
+  });
+
+  const M = 40;
+  const PAGE_W = doc.page.width;
+  const PAGE_H = doc.page.height;
+  const contentW = PAGE_W - M * 2;
+  const bottomLimit = PAGE_H - 56;
+
+  const statusColorOf = (st) => STATUS_COLOR[st] || FOM.muted;
+
+  // Kopf-Banner im FOM-Farbverlauf (gestuft simuliert).
+  function drawBand() {
+    const bandH = 78;
+    const steps = 60;
+    for (let k = 0; k < steps; k++) {
+      const t = k / (steps - 1);
+      const c = lerpColor('#00d9cc', '#008c82', t);
+      doc.rect((PAGE_W * k) / steps, 0, PAGE_W / steps + 1, bandH).fill(c);
+    }
+    doc.rect(0, bandH, PAGE_W, 4).fill(FOM.primaryLight);
+    doc
+      .fillColor('#ffffff')
+      .font('Helvetica-Bold')
+      .fontSize(21)
+      .text('Mängelbericht', M, 22);
+    doc
+      .font('Helvetica')
+      .fontSize(9.5)
+      .fillColor(FOM.bandText)
+      .text(`DLS ↔ Immomanagement · Studio-Kommunikationsportal`, M, 50);
+    doc
+      .fontSize(9)
+      .fillColor(FOM.bandText)
+      .text(`Erstellt: ${new Date().toLocaleString('de-DE')}`, M, 50, {
+        width: contentW,
+        align: 'right',
+      });
+    doc.fillColor(FOM.ink).font('Helvetica');
+    doc.y = bandH + 18;
+  }
+
+  // Farbige „Pille" mit Text; gibt die belegte Breite zurück.
+  function pill(x, y, label, bg, fg = '#ffffff') {
+    doc.font('Helvetica-Bold').fontSize(8.5);
+    const w = doc.widthOfString(label) + 14;
+    doc.roundedRect(x, y, w, 16, 8).fill(bg);
+    doc.fillColor(fg).text(label, x + 7, y + 4.2, { lineBreak: false });
+    doc.fillColor(FOM.ink).font('Helvetica');
+    return w;
+  }
+
+  function newPageIfNeeded(estHeight) {
+    if (doc.y + estHeight > bottomLimit) {
+      doc.addPage();
+      drawBand();
+    }
+  }
+
+  drawBand();
 
   if (!rows.length) {
-    doc.fillColor('#2c333b').fontSize(12).text('Keine Einträge vorhanden.');
-    doc.end();
+    doc.fillColor(FOM.muted).font('Helvetica').fontSize(12)
+      .text('Keine Einträge vorhanden.', M, doc.y + 10);
+    finishWithFooter(doc, M, PAGE_W, PAGE_H, contentW, pageCount);
     return;
   }
 
+  // ── Übersicht: Statuszähler als Pillen ──────────────────────────────────
+  const counts = { kritisch: 0, handlungsbedarf: 0, provisorisch: 0, ok: 0 };
+  rows.forEach(({ i }) => {
+    counts[i.status] = (counts[i.status] || 0) + 1;
+  });
+  doc.font('Helvetica-Bold').fontSize(12).fillColor(FOM.primaryDark)
+    .text(`Übersicht — ${standort || 'Alle Standorte'}`, M, doc.y);
+  doc.font('Helvetica').fontSize(9.5).fillColor(FOM.muted)
+    .text(`${rows.length} Einträge gesamt`, M, doc.y + 2);
+  doc.moveDown(0.5);
+  let sx = M;
+  const sy = doc.y;
+  [
+    ['Kritisch', counts.kritisch, STATUS_COLOR.kritisch],
+    ['Handlungsbedarf', counts.handlungsbedarf, STATUS_COLOR.handlungsbedarf],
+    ['Provisorisch', counts.provisorisch, STATUS_COLOR.provisorisch],
+    ['OK', counts.ok, STATUS_COLOR.ok],
+  ].forEach(([lbl, cnt, col]) => {
+    const w = pill(sx, sy, `${lbl}: ${cnt}`, col);
+    sx += w + 8;
+  });
+  doc.y = sy + 26;
+  doc.strokeColor(FOM.border).lineWidth(1).moveTo(M, doc.y).lineTo(PAGE_W - M, doc.y).stroke();
+  doc.y += 14;
+
+  // ── Einträge als Karten ─────────────────────────────────────────────────
   rows.forEach(({ i, s }, n) => {
-    if (doc.y > 740) doc.addPage();
-    const statusColor =
-      i.status === 'kritisch'
-        ? '#dc3545'
-        : i.status === 'handlungsbedarf'
-        ? '#fd7e14'
-        : i.status === 'provisorisch'
-        ? '#d39e00'
-        : '#28a745';
-    doc
-      .fillColor('#2c333b')
-      .fontSize(12.5)
-      .text(`${n + 1}. ${s.standort || '—'} · ${s.name || '—'} — ${i.titel || i.kategorie || 'Mangel'}`);
-    doc
-      .fillColor(statusColor)
-      .fontSize(10)
-      .text(
-        `Status: ${STATUS_LABEL[i.status] || i.status || '—'}  |  Bearbeitung: ${
-          BEARB_LABEL[i.bearbeitungsstatus] || 'Offen'
-        }  |  Reicht aus: ${AUSR_LABEL[i.ausreichend] || '—'}`
-      );
-    doc.fillColor('#5a626d').fontSize(10);
+    const statusColor = statusColorOf(i.status);
+    const innerX = M + 16;
+    const innerW = contentW - 30;
+
+    // Höhe grob schätzen, damit Karten nicht über den Seitenrand brechen.
+    let est = 64;
+    [i.beschreibung, i.vorhandeneGeraete, i.benoetigt].forEach((tx) => {
+      if (tx)
+        est += doc.font('Helvetica').fontSize(9.5).heightOfString(tx, { width: innerW }) + 3;
+    });
+    newPageIfNeeded(est);
+
+    const startY = doc.y;
+    doc.y = startY + 12;
+
+    // Titel.
+    doc.fillColor(FOM.ink).font('Helvetica-Bold').fontSize(11.5)
+      .text(`${n + 1}.  ${i.titel || i.kategorie || 'Mangel'}`, innerX, doc.y, { width: innerW });
+    // Standort/Studio.
+    doc.fillColor(FOM.muted).font('Helvetica').fontSize(9)
+      .text(`${s.standort || '—'} · ${s.name || '—'}${i.kategorie ? '  ·  ' + i.kategorie : ''}`, innerX, doc.y + 1, { width: innerW });
+    doc.moveDown(0.4);
+
+    // Status-Pillen (mit Umbruch).
+    let px = innerX;
+    let py = doc.y;
+    const addPill = (label, bg) => {
+      doc.font('Helvetica-Bold').fontSize(8.5);
+      const w = doc.widthOfString(label) + 14;
+      if (px + w > innerX + innerW) {
+        px = innerX;
+        py += 20;
+      }
+      pill(px, py, label, bg);
+      px += w + 6;
+    };
+    addPill(`Status: ${STATUS_LABEL[i.status] || i.status || '—'}`, statusColor);
+    addPill(`Bearbeitung: ${BEARB_LABEL[i.bearbeitungsstatus] || 'Offen'}`, FOM.muted);
+    if (i.ausreichend) addPill(`Reicht aus: ${AUSR_LABEL[i.ausreichend] || '—'}`, FOM.faint);
+    doc.y = py + 22;
+
+    // Detailzeilen.
+    doc.font('Helvetica').fontSize(9.5);
+    const line = (lbl, val, color = FOM.muted) => {
+      if (!val) return;
+      doc.fillColor(FOM.faint).font('Helvetica-Bold').fontSize(9)
+        .text(lbl, innerX, doc.y, { continued: true, width: innerW });
+      doc.fillColor(color).font('Helvetica').fontSize(9.5).text(' ' + val);
+    };
     if (i.zustaendig || i.faelligBis)
-      doc.text(`Zuständig: ${i.zustaendig || '—'}   Fällig bis: ${i.faelligBis || '—'}`);
-    if (i.beschreibung) doc.text(`Beschreibung: ${i.beschreibung}`);
-    if (i.vorhandeneGeraete) doc.text(`Vorhanden: ${i.vorhandeneGeraete}`);
-    if (i.benoetigt) doc.fillColor('#856404').text(`Benötigt: ${i.benoetigt}`).fillColor('#5a626d');
+      line('Zuständig:', `${i.zustaendig || '—'}    Fällig bis: ${i.faelligBis || '—'}`);
+    line('Beschreibung:', i.beschreibung);
+    line('Vorhanden:', i.vorhandeneGeraete);
+    line('Benötigt:', i.benoetigt, '#9a6700');
     const nf = (i.fotos || []).length;
     const nk = (i.kommentare || []).length;
-    if (nf || nk) doc.text(`Fotos: ${nf}   Kommentare: ${nk}`);
-    doc.moveDown(0.5);
-    doc
-      .strokeColor('#dde2e7')
-      .lineWidth(0.5)
-      .moveTo(40, doc.y)
-      .lineTo(555, doc.y)
-      .stroke();
-    doc.moveDown(0.4);
+    if (nf || nk) line('Anhänge:', `${nf} Foto(s) · ${nk} Kommentar(e)`);
+
+    const endY = doc.y + 12;
+    // Kartenrahmen + farbige Statuskante zeichnen (hinter dem Text-Layout).
+    doc.roundedRect(M, startY, contentW, endY - startY, 7).lineWidth(1).stroke(FOM.border);
+    doc.roundedRect(M, startY, 5, endY - startY, 2).fill(statusColor);
+    doc.fillColor(FOM.ink);
+    doc.y = endY + 12;
   });
 
-  doc.end();
+  finishWithFooter(doc, M, PAGE_W, PAGE_H, contentW, pageCount);
 });
+
+// Lineare Interpolation zweier Hex-Farben (für den Banner-Verlauf).
+function lerpColor(a, b, t) {
+  const pa = [parseInt(a.slice(1, 3), 16), parseInt(a.slice(3, 5), 16), parseInt(a.slice(5, 7), 16)];
+  const pb = [parseInt(b.slice(1, 3), 16), parseInt(b.slice(3, 5), 16), parseInt(b.slice(5, 7), 16)];
+  const c = pa.map((v, k) => Math.round(v + (pb[k] - v) * t));
+  return '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+// Fußzeile mit Seitenzahlen auf alle gepufferten Seiten schreiben und schließen.
+function finishWithFooter(doc, M, PAGE_W, PAGE_H, contentW, pageCount) {
+  for (let p = 0; p < pageCount; p++) {
+    doc.switchToPage(p);
+    const fy = PAGE_H - 34;
+    doc.strokeColor('#dde2e7').lineWidth(0.5).moveTo(M, fy - 6).lineTo(PAGE_W - M, fy - 6).stroke();
+    doc.font('Helvetica').fontSize(8).fillColor('#8b92a0')
+      .text('DLS ↔ Immomanagement · Mängelbericht', M, fy, { lineBreak: false });
+    doc.fontSize(8).fillColor('#8b92a0')
+      .text(`Seite ${p + 1} von ${pageCount}`, M, fy, { width: contentW, align: 'right', lineBreak: false });
+  }
+  doc.flushPages();
+  doc.end();
+}
 
 // Gesamter Zustand auf einen Schlag (für initiales Laden des Frontends).
 app.get('/api/state', (req, res) => {

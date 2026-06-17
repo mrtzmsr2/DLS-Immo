@@ -137,6 +137,9 @@ tbody tr:hover td{background:rgba(0,191,179,.07)}
 .msg-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700}
 .msg.team-DLS .msg-avatar{background:linear-gradient(135deg,#5b8def,#3a6fd8)}
 .msg.team-Immo .msg-avatar{background:var(--fom-gradient)}
+.msg.team-IT .msg-avatar{background:linear-gradient(135deg,#9b7ad6,#6f4fb8)}
+.msg.team-Medien .msg-avatar{background:linear-gradient(135deg,#ff9d6c,#f06543)}
+.msg.team-Standort .msg-avatar{background:linear-gradient(135deg,#8b92a0,#5a626d)}
 .msg-bubble{background:var(--gray-50);border:1px solid var(--gray-100);border-radius:12px;padding:10px 14px;flex:1}
 .msg-meta{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
 .msg-author{font-size:13px;font-weight:700;color:var(--gray-800)}
@@ -167,6 +170,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 .modal-close:hover{color:var(--gray-800)}
 .modal-body{padding:20px 24px}
 .modal-footer{padding:16px 24px;border-top:1px solid var(--gray-100);display:flex;gap:10px;justify-content:flex-end}
+.modal.no-close .modal-close{display:none}
+.login-list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin-top:4px}
+.login-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:13.5px;transition:all .15s}
+.login-item:hover{border-color:var(--fom-primary);background:var(--gray-50)}
 
 /* Misc */
 .page{display:none}.page.active{display:block}
@@ -246,22 +253,44 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 // ════════════════════════════════════════════════════════════════════════════
 //  STATE & API
 // ════════════════════════════════════════════════════════════════════════════
-const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null };
-const Me = {
-  get name(){ return localStorage.getItem('dls_name') || ''; },
-  get team(){ return localStorage.getItem('dls_team') || ''; },
-  set(name,team){ localStorage.setItem('dls_name',name); localStorage.setItem('dls_team',team); }
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null };
+
+// Teams (Zugehörigkeit) + ob das Team Superadmin werden darf.
+const TEAMS = {
+  standort:{label:'Standort (Melder)', short:'Standort', superAllowed:false},
+  dls:{label:'DLS-Team', short:'DLS', superAllowed:true},
+  it:{label:'IT-Team', short:'IT', superAllowed:false},
+  medien:{label:'Medientechnik', short:'Medien', superAllowed:false},
+  immo:{label:'Immobilienmanagement', short:'Immo', superAllowed:true}
 };
 
-async function api(path, opts){
-  const res = await fetch('/api'+path, { headers:{'Content-Type':'application/json'}, ...opts });
+const Me = {
+  get id(){ return localStorage.getItem('dls_uid') || ''; },
+  get user(){ return State.users.find(u=>u.id===this.id) || null; },
+  get name(){ const u=this.user; return u ? `${u.vorname} ${u.nachname}`.trim() : ''; },
+  // Kurzlabel des Teams (wird Meldungen/Nachrichten zugeordnet, z.B. "DLS").
+  get team(){ const u=this.user; return u ? (TEAMS[u.team]?.short || u.team) : ''; },
+  get teamCode(){ const u=this.user; return u ? u.team : ''; },
+  setId(id){ localStorage.setItem('dls_uid', id); },
+  clear(){ localStorage.removeItem('dls_uid'); }
+};
+
+// Berechtigungs-Helfer (UI-Ebene; serverseitig zusätzlich abgesichert).
+function isLoggedIn(){ return !!Me.user; }
+function isSuperadmin(){ const u=Me.user; return !!(u && u.superadmin); }
+function isMelder(){ const u=Me.user; return !!(u && u.team==='standort'); }
+function canManage(){ const u=Me.user; return !!(u && u.team!=='standort'); }
+
+async function api(path, opts={}){
+  const headers = { 'Content-Type':'application/json', 'X-Acting-User': Me.id, ...(opts.headers||{}) };
+  const res = await fetch('/api'+path, { ...opts, headers });
   if(!res.ok){ const e = await res.json().catch(()=>({error:res.statusText})); throw new Error(e.error||'Fehler'); }
   return res.status===204 ? null : res.json();
 }
 async function loadState(){
   const s = await api('/state');
   State.studios = s.studios||[]; State.infrastruktur = s.infrastruktur||[];
-  State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[];
+  State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[]; State.users = s.users||[];
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -296,25 +325,32 @@ const INFRA_KATEGORIEN = ['Klima','Strom','Wasser','Netzwerk','Heizung','Sicherh
 //  NAVIGATION (modular – Tools werden hier registriert)
 // ════════════════════════════════════════════════════════════════════════════
 const Modules = [
-  { key:'dashboard', label:'Dashboard', icon:'📊', section:'Übersicht', render:renderDashboard },
-  { key:'studios', label:'Studios', icon:'🏢', section:'Übersicht', render:renderStudios },
-  { key:'infrastruktur', label:'Infrastruktur', icon:'🔧', section:'Übersicht', render:renderInfrastruktur },
-  { key:'bedarf', label:'Bedarfsübersicht', icon:'📋', section:'Übersicht', render:renderBedarf },
-  { key:'kommunikation', label:'Kommunikation', icon:'💬', section:'Austausch', render:renderKommunikation },
-  { key:'tools', label:'Tools verwalten', icon:'🧩', section:'Erweitern', render:renderTools }
+  { key:'dashboard', label:'Dashboard', icon:'📊', section:'Übersicht', render:renderDashboard, show:canManage },
+  { key:'studios', label:'Studios', icon:'🏢', section:'Übersicht', render:renderStudios, show:canManage },
+  { key:'infrastruktur', label:'Infrastruktur', icon:'🔧', section:'Übersicht', render:renderInfrastruktur, show:canManage },
+  { key:'bedarf', label:'Bedarfsübersicht', icon:'📋', section:'Übersicht', render:renderBedarf, show:canManage },
+  { key:'kommunikation', label:'Kommunikation', icon:'💬', section:'Austausch', render:renderKommunikation, show:canManage },
+  { key:'tools', label:'Tools verwalten', icon:'🧩', section:'Erweitern', render:renderTools, show:canManage },
+  { key:'melden', label:'Mangel melden', icon:'⚠️', section:'Melden', render:renderMelden, show:isMelder },
+  { key:'meine', label:'Meine Meldungen', icon:'📨', section:'Melden', render:renderMeineMeldungen, show:isMelder },
+  { key:'admin', label:'Benutzerverwaltung', icon:'👥', section:'Administration', render:renderAdmin, show:isSuperadmin }
 ];
+
+function visibleModules(){ return Modules.filter(m=> m.show ? m.show() : true); }
+function defaultRoute(){ const v=visibleModules(); return v.length ? v[0].key : 'melden'; }
 
 function rank(status){ return {kritisch:4,handlungsbedarf:3,provisorisch:2,ok:1}[status]||0; }
 
 function buildNav(){
   const nav = document.getElementById('nav');
-  const sections = [...new Set(Modules.map(m=>m.section))];
-  // Aktive Custom-Tools als eigene Nav-Einträge.
-  const customTools = State.tools.filter(t=>t.aktiv);
+  const mods = visibleModules();
+  const sections = [...new Set(mods.map(m=>m.section))];
+  // Aktive Custom-Tools als eigene Nav-Einträge (nur für Team-Mitglieder).
+  const customTools = canManage() ? State.tools.filter(t=>t.aktiv) : [];
   let html='';
   sections.forEach(sec=>{
     html += `<div class="nav-section">${esc(sec)}</div>`;
-    Modules.filter(m=>m.section===sec).forEach(m=>{
+    mods.filter(m=>m.section===sec).forEach(m=>{
       html += navBtn(m.key, m.icon, m.label);
     });
   });
@@ -330,6 +366,13 @@ function navBtn(key,icon,label){
 }
 
 function navigate(key){
+  // Custom-Tools nur für Team-Mitglieder.
+  if(key.startsWith('tool:') && !canManage()) key = defaultRoute();
+  // Zugriff auf ausgeblendete Module verhindern.
+  if(!key.startsWith('tool:')){
+    const target = Modules.find(m=>m.key===key);
+    if(!target || (target.show && !target.show())) key = defaultRoute();
+  }
   State.current = key;
   buildNav();
   toggleSidebar(false);
@@ -342,7 +385,7 @@ function navigate(key){
     renderCustomTool(content, t);
     return;
   }
-  const mod = Modules.find(m=>m.key===key) || Modules[0];
+  const mod = Modules.find(m=>m.key===key) || visibleModules()[0] || Modules[0];
   document.getElementById('topbarTitle').textContent = mod.label;
   mod.render(content, actions);
 }
@@ -1098,23 +1141,245 @@ async function saveTool(id){
   }catch(e){ toast(e.message,'error'); }
 }
 
-// User-Profil
-function openUserModal(){
+// ════════════════════════════════════════════════════════════════════════════
+//  LOGIN / PROFIL / BENUTZERVERWALTUNG
+// ════════════════════════════════════════════════════════════════════════════
+function teamBadge(code){
+  const t=TEAMS[code]; if(!t) return `<span class="badge badge-gray">${esc(code||'—')}</span>`;
+  const cls = code==='dls'?'badge-blue':code==='immo'?'badge-green':code==='standort'?'badge-yellow':'badge-purple';
+  return `<span class="badge ${cls}">${esc(t.short)}</span>`;
+}
+function roleBadge(u){
+  if(u.aktiv===false) return `<span class="badge badge-gray">Deaktiviert</span>`;
+  if(u.superadmin) return `<span class="badge badge-red">Superadmin</span>`;
+  if(u.team==='standort') return `<span class="badge badge-gray">Melder</span>`;
+  return `<span class="badge badge-blue">Team-Mitglied</span>`;
+}
+function userFullName(u){ return `${u.vorname} ${u.nachname}`.trim(); }
+
+// Anmeldung: Benutzer per Vor-/Nachname suchen und auswählen. Ohne Benutzer → Erst-Admin anlegen.
+function openLoginModal(){
+  const aktive = State.users.filter(u=>u.aktiv!==false);
+  if(!State.users.length){
+    openModal('👋 Willkommen – ersten Administrator anlegen', `
+      <p style="color:var(--gray-600);margin-bottom:10px">Es ist noch kein Benutzer angelegt. Lege den ersten <b>Superadmin</b> an (nur DLS oder Immobilienmanagement).</p>
+      <div class="form-grid">
+        <div class="form-row"><label>Vorname *</label><input id="lo_vorname" placeholder="Vorname"></div>
+        <div class="form-row"><label>Nachname *</label><input id="lo_nachname" placeholder="Nachname"></div>
+      </div>
+      <div class="form-row"><label>Team *</label><select id="lo_team">
+        <option value="dls">DLS-Team</option>
+        <option value="immo">Immobilienmanagement</option>
+      </select></div>`,
+      [{label:'Administrator anlegen',cls:'btn-primary',fn:createFirstAdmin}], 'no-close');
+    return;
+  }
   const body=`
-    <div class="form-row"><label>Dein Name</label><input id="u_name" value="${esc(Me.name)}" placeholder="Vor- und Nachname"></div>
-    <div class="form-row"><label>Dein Team</label><select id="u_team">
-      <option value="DLS" ${Me.team==='DLS'?'selected':''}>DLS-Team</option>
-      <option value="Immo" ${Me.team==='Immo'?'selected':''}>Immobilienmanagement</option>
-    </select></div>
-    <p style="font-size:12.5px;color:var(--gray-400)">Wird lokal gespeichert und allen Meldungen zugeordnet.</p>`;
-  openModal('Profil', body, [{label:'Speichern',cls:'btn-primary',fn:()=>{ const n=val('u_name').trim(); if(!n){toast('Name fehlt','error');return;} Me.set(n,val('u_team')); closeModal(); applyUser(); toast('Profil gespeichert','success'); }}]);
+    <div class="form-row"><label>Wer bist du? (Name suchen)</label><input id="lo_search" placeholder="Vor- oder Nachname…" oninput="renderLoginList()" autocomplete="off"></div>
+    <div id="lo_list" class="login-list"></div>
+    <p style="font-size:12.5px;color:var(--gray-400);margin-top:8px">${aktive.length} aktive Benutzer. Nicht dabei? Ein Superadmin kann dich anlegen.</p>`;
+  openModal('🔐 Anmelden', body, isLoggedIn()?[{label:'Abbrechen',cls:'btn-secondary',fn:closeModal}]:[], isLoggedIn()?'':'no-close');
+  renderLoginList();
+  setTimeout(()=>document.getElementById('lo_search')?.focus(),50);
+}
+function renderLoginList(){
+  const box=document.getElementById('lo_list'); if(!box) return;
+  const q=(document.getElementById('lo_search')?.value||'').trim().toLowerCase();
+  let list=State.users.filter(u=>u.aktiv!==false);
+  if(q) list=list.filter(u=>userFullName(u).toLowerCase().includes(q) || (TEAMS[u.team]?.short||'').toLowerCase().includes(q));
+  list.sort((a,b)=>userFullName(a).localeCompare(userFullName(b),'de'));
+  box.innerHTML = list.length ? list.slice(0,40).map(u=>`
+    <button class="login-item" onclick="doLogin('${u.id}')">
+      <span class="user-avatar" style="width:30px;height:30px;font-size:12px">${initials(userFullName(u))}</span>
+      <span style="flex:1;text-align:left"><span style="font-weight:600">${esc(userFullName(u))}</span></span>
+      ${teamBadge(u.team)} ${u.superadmin?'<span class="badge badge-red">Superadmin</span>':''}
+    </button>`).join('') : `<div class="empty-state" style="padding:18px">Kein Benutzer gefunden</div>`;
+}
+async function doLogin(id){
+  Me.setId(id);
+  closeModal();
+  try{ await loadState(); }catch(e){}
+  applyUser(); buildNav(); navigate(defaultRoute());
+  toast('Angemeldet als '+Me.name,'success');
+}
+async function createFirstAdmin(){
+  const vorname=val('lo_vorname'), nachname=val('lo_nachname'), team=document.getElementById('lo_team').value;
+  if(!vorname||!nachname){ toast('Vor- und Nachname erforderlich','error'); return; }
+  try{
+    const u=await api('/users',{method:'POST',body:JSON.stringify({vorname,nachname,team,superadmin:true})});
+    await loadState(); Me.setId(u.id); closeModal(); applyUser(); buildNav(); navigate(defaultRoute());
+    toast('Administrator angelegt','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+function logout(){ Me.clear(); applyUser(); buildNav(); openLoginModal(); }
+
+// Profil-Chip in der Sidebar.
+function openUserModal(){
+  if(!isLoggedIn()){ openLoginModal(); return; }
+  const u=Me.user;
+  const body=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div class="user-avatar" style="width:48px;height:48px;font-size:17px;background:var(--fom-gradient)">${initials(Me.name)}</div>
+      <div><div style="font-weight:700;font-size:15px">${esc(Me.name)}</div>
+      <div style="margin-top:4px">${teamBadge(u.team)} ${roleBadge(u)}</div></div>
+    </div>
+    <p style="font-size:12.5px;color:var(--gray-600)">${isMelder()?'Du kannst Mängel an den Studios melden.':isSuperadmin()?'Du hast volle Rechte inklusive Benutzerverwaltung.':'Du bist Team-Mitglied mit operativem Zugriff.'}</p>`;
+  const btns=[{label:'Benutzer wechseln',cls:'btn-secondary',fn:()=>{closeModal();openLoginModal();}},
+    {label:'Abmelden',cls:'btn-danger',fn:()=>{closeModal();logout();}}];
+  if(isSuperadmin()) btns.unshift({label:'👥 Benutzerverwaltung',cls:'btn-primary',fn:()=>{closeModal();navigate('admin');}});
+  openModal('Profil', body, btns);
 }
 function applyUser(){
-  document.getElementById('userName').textContent = Me.name || 'Anmelden';
-  document.getElementById('userRole').textContent = Me.team ? (Me.team==='DLS'?'DLS-Team':'Immobilienmanagement') : 'Team wählen';
-  document.getElementById('userAvatar').textContent = Me.name ? initials(Me.name) : '??';
+  const u=Me.user;
+  document.getElementById('userName').textContent = u ? Me.name : 'Anmelden';
+  document.getElementById('userRole').textContent = u ? (TEAMS[u.team]?.label || u.team) + (u.superadmin?' · Superadmin':'') : 'Bitte anmelden';
+  document.getElementById('userAvatar').textContent = u ? initials(Me.name) : '??';
 }
-function requireUser(){ if(!Me.name||!Me.team){ openUserModal(); toast('Bitte zuerst Profil anlegen','error'); return false; } return true; }
+function requireUser(){ if(!isLoggedIn()){ openLoginModal(); toast('Bitte zuerst anmelden','error'); return false; } return true; }
+
+// ── Benutzerverwaltung (nur Superadmin) ─────────────────────────────────────
+let adminSearch='';
+function renderAdmin(content, actions){
+  if(!isSuperadmin()){ content.innerHTML=emptyState('Kein Zugriff'); return; }
+  actions.innerHTML = `<button class="btn btn-primary" onclick="openUserEditModal()">+ Benutzer</button>`;
+  const q=adminSearch.trim().toLowerCase();
+  let users=State.users.slice();
+  if(q) users=users.filter(u=>userFullName(u).toLowerCase().includes(q) || (TEAMS[u.team]?.short||'').toLowerCase().includes(q));
+  users.sort((a,b)=>userFullName(a).localeCompare(userFullName(b),'de'));
+  const rows = users.map(u=>`
+    <tr>
+      <td><div style="display:flex;align-items:center;gap:9px"><span class="user-avatar" style="width:30px;height:30px;font-size:12px;background:var(--fom-gradient)">${initials(userFullName(u))}</span><b>${esc(userFullName(u))}</b></div></td>
+      <td>${teamBadge(u.team)}</td>
+      <td>${roleBadge(u)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn-ghost" title="Bearbeiten" onclick="openUserEditModal('${u.id}')">✏️</button>
+        <button class="btn-ghost" title="Löschen" onclick="deleteUser('${u.id}')">🗑️</button>
+      </td>
+    </tr>`).join('');
+  content.innerHTML = `
+    <div class="card"><div class="card-body">
+      <p style="color:var(--gray-600);margin-bottom:10px">Berechtigungsebenen: <b>Standort-Melder</b> (nur Mängel melden) · <b>Team-Mitglied</b> (DLS/IT/Medien/Immo) · <b>Superadmin</b> (volle Rechte, nur DLS &amp; Immo).</p>
+      <div class="form-row" style="margin:0"><input id="ad_search" value="${esc(adminSearch)}" placeholder="🔍 Nach Vor-/Nachname suchen…" oninput="adminSearch=this.value;renderAdmin(document.getElementById('content'),document.getElementById('topbarActions'))"></div>
+    </div></div>
+    <div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Team</th><th>Berechtigung</th><th style="text-align:right">Aktion</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="4">${emptyState('Keine Benutzer')}</td></tr>`}</tbody>
+    </table></div></div>`;
+  const inp=document.getElementById('ad_search'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); }
+}
+function openUserEditModal(id){
+  const u = id ? State.users.find(x=>x.id===id) : {};
+  const edit=!!id;
+  const teamOpts=Object.entries(TEAMS).map(([k,v])=>`<option value="${k}"${u.team===k?' selected':''}>${esc(v.label)}</option>`).join('');
+  const body=`
+    <div class="form-grid">
+      <div class="form-row"><label>Vorname *</label><input id="us_vorname" value="${esc(u.vorname||'')}" placeholder="Vorname"></div>
+      <div class="form-row"><label>Nachname *</label><input id="us_nachname" value="${esc(u.nachname||'')}" placeholder="Nachname"></div>
+    </div>
+    <div class="form-row"><label>Team / Berechtigungsebene *</label><select id="us_team" onchange="syncSuperToggle()">${teamOpts}</select></div>
+    <div class="form-row" id="us_super_row"><label><input type="checkbox" id="us_super" ${u.superadmin?'checked':''} style="width:auto;margin-right:6px"> Superadmin (volle Rechte – nur DLS &amp; Immo)</label></div>
+    <div class="form-row"><label><input type="checkbox" id="us_aktiv" ${u.aktiv!==false?'checked':''} style="width:auto;margin-right:6px"> Aktiv (darf sich anmelden)</label></div>`;
+  openModal(edit?'Benutzer bearbeiten':'Neuer Benutzer', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Anlegen',cls:'btn-primary',fn:()=>saveUser(id)}
+  ]);
+  syncSuperToggle();
+}
+function syncSuperToggle(){
+  const team=document.getElementById('us_team')?.value;
+  const allowed=TEAMS[team]?.superAllowed;
+  const row=document.getElementById('us_super_row'), cb=document.getElementById('us_super');
+  if(!row||!cb) return;
+  cb.disabled=!allowed; if(!allowed) cb.checked=false;
+  row.style.opacity=allowed?'1':'.45';
+}
+async function saveUser(id){
+  const payload={
+    vorname:val('us_vorname'), nachname:val('us_nachname'),
+    team:document.getElementById('us_team').value,
+    superadmin:document.getElementById('us_super').checked,
+    aktiv:document.getElementById('us_aktiv').checked
+  };
+  if(!payload.vorname||!payload.nachname){ toast('Vor- und Nachname erforderlich','error'); return; }
+  try{
+    if(id) await api('/users/'+id,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/users',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); applyUser(); buildNav();
+    renderAdmin(document.getElementById('content'),document.getElementById('topbarActions'));
+    toast('Gespeichert','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+async function deleteUser(id){
+  const u=State.users.find(x=>x.id===id); if(!u) return;
+  if(id===Me.id){ toast('Du kannst dich nicht selbst löschen','error'); return; }
+  if(!confirm(`Benutzer „${userFullName(u)}" löschen?`)) return;
+  try{
+    await api('/users/'+id,{method:'DELETE'});
+    await loadState(); buildNav();
+    renderAdmin(document.getElementById('content'),document.getElementById('topbarActions'));
+    toast('Gelöscht','success');
+  }catch(e){ toast(e.message,'error'); }
+}
+
+// ── Mangel melden (Standort-Melder) ─────────────────────────────────────────
+function renderMelden(content, actions){
+  actions.innerHTML='';
+  const studios=State.studios.slice().sort((a,b)=>(a.standort||'').localeCompare(b.standort||'','de')||(a.name||'').localeCompare(b.name||'','de'));
+  if(!studios.length){ content.innerHTML=emptyState('Es sind noch keine Studios hinterlegt. Bitte an das DLS-/Immo-Team wenden.'); return; }
+  content.innerHTML = `
+    <div class="card"><div class="card-body">
+      <h2 style="color:var(--fom-primary);margin:0 0 4px">⚠️ Mangel melden</h2>
+      <p style="color:var(--gray-600);margin:0 0 16px">Melde einen Mangel oder Bedarf an einem Studio. Das DLS-/Immo-Team kümmert sich um die Bearbeitung.</p>
+      <div class="form-grid">
+        <div class="form-row"><label>Studio *</label><select id="md_studio">${studios.map(s=>`<option value="${s.id}">${esc(s.standort?s.standort+' · ':'')}${esc(s.name)}</option>`).join('')}</select></div>
+        <div class="form-row"><label>Kategorie</label><select id="md_kat">${INFRA_KATEGORIEN.map(k=>`<option>${k}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-row"><label>Titel / Kurzbeschreibung *</label><input id="md_titel" placeholder="z.B. Klimagerät tropft"></div>
+      <div class="form-row"><label>Beschreibung</label><textarea id="md_desc" placeholder="Was genau ist das Problem? Wo befindet es sich?"></textarea></div>
+      <div class="form-row"><label>Foto (optional)</label><input type="file" id="md_foto" accept="image/*" capture="environment"></div>
+      <button class="btn btn-primary" onclick="submitMeldung()">Mangel melden</button>
+    </div></div>`;
+}
+async function submitMeldung(){
+  if(!requireUser()) return;
+  const studioId=document.getElementById('md_studio').value;
+  const titel=val('md_titel');
+  if(!titel){ toast('Bitte einen Titel angeben','error'); return; }
+  const payload={
+    studioId, titel, kategorie:document.getElementById('md_kat').value,
+    beschreibung:val('md_desc'),
+    status:'handlungsbedarf', bearbeitungsstatus:'offen',
+    melderId:Me.id, erstelltVon:Me.team+' – '+Me.name
+  };
+  try{
+    const created=await api('/infrastruktur',{method:'POST',body:JSON.stringify(payload)});
+    const file=document.getElementById('md_foto')?.files?.[0];
+    if(file){
+      try{ const dataUrl=await resizeImage(file,1600,0.82);
+        await api('/infrastruktur/'+created.id+'/fotos',{method:'POST',body:JSON.stringify({dataUrl,hochgeladenVon:Me.team+' – '+Me.name})});
+      }catch(e){ toast('Mangel gespeichert, Foto fehlgeschlagen','error'); }
+    }
+    await loadState(); toast('Danke! Mangel gemeldet','success'); navigate('meine');
+  }catch(e){ toast(e.message,'error'); }
+}
+function renderMeineMeldungen(content, actions){
+  actions.innerHTML = `<button class="btn btn-primary" onclick="navigate('melden')">+ Neue Meldung</button>`;
+  const meine=State.infrastruktur.filter(i=>i.melderId===Me.id).sort((a,b)=>new Date(b.erstelltAm)-new Date(a.erstelltAm));
+  if(!meine.length){ content.innerHTML=emptyState('Du hast noch nichts gemeldet. Lege oben eine neue Meldung an.'); return; }
+  content.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">${meine.map(i=>{
+    const st=INFRA_STATUS[i.status]||{label:i.status,badge:'badge-gray'};
+    const bs=BEARBEITUNG[i.bearbeitungsstatus]||BEARBEITUNG.offen;
+    const s=studioById(i.studioId);
+    return `<div class="studio-card" style="cursor:default;border-left-color:var(--fom-primary)">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <b>${esc(i.titel)}</b>
+        <span>${`<span class="badge ${st.badge}">${st.label}</span>`} <span class="badge ${bs.badge}">${bs.label}</span></span>
+      </div>
+      <div class="infra-desc" style="margin-top:4px">${esc(i.beschreibung||'')}</div>
+      <div style="font-size:12px;color:var(--gray-600);margin-top:6px">${s?esc((s.standort?s.standort+' · ':'')+s.name):''}${i.kategorie?' · '+esc(i.kategorie):''} · ${fmtDT(i.erstelltAm)} · ${(i.fotos||[]).length} Foto(s)</div>
+    </div>`;
+  }).join('')}</div>`;
+}
 
 // Utils
 function studioById(id){ return State.studios.find(s=>s.id===id); }
@@ -1197,8 +1462,10 @@ function exportReport(fmt, standortEnc){
 // ════════════════════════════════════════════════════════════════════════════
 async function init(){
   try{ await loadState(); }catch(e){ toast('Server nicht erreichbar','error'); }
-  buildNav(); applyUser(); navigate('dashboard');
-  if(!Me.name) setTimeout(openUserModal, 400);
+  applyUser();
+  buildNav();
+  if(!isLoggedIn()){ openLoginModal(); }
+  else { navigate(defaultRoute()); }
 }
 init();
 </script>
