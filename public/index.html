@@ -777,10 +777,15 @@ function renderTools(content, actions){
     <div class="studio-grid">${State.tools.length? State.tools.map(toolCard).join('') : emptyState('Noch keine eigenen Tools')}</div>`;
 }
 function toolCard(t){
-  return `<div class="studio-card" style="cursor:default;border-left-color:${t.aktiv?'#28a745':'var(--gray-200)'}">
+  const all=t.eintraege||[]; const total=all.length;
+  const done=all.filter(e=>teDone(t,e)).length;
+  const typeLabel=t.typ==='checkliste'?'Checkliste':'Liste';
+  return `<div class="studio-card" style="cursor:pointer;border-left-color:${t.aktiv?'#28a745':'var(--gray-200)'}" onclick="navigate('tool:${t.id}')">
     <h3>${t.icon||'🧩'} ${esc(t.name)} <span class="badge ${t.aktiv?'badge-green':'badge-gray'}">${t.aktiv?'Aktiv':'Inaktiv'}</span></h3>
     <div class="infra-desc">${esc(t.beschreibung||'')}</div>
-    <div class="studio-stats">
+    <div style="font-size:12.5px;color:var(--gray-600);margin:8px 0">${typeLabel} · ${total} Einträge${total?` · ${total-done} offen`:''}</div>
+    <div class="studio-stats" onclick="event.stopPropagation()">
+      <button class="btn btn-primary btn-sm" onclick="navigate('tool:${t.id}')">Öffnen</button>
       <button class="btn btn-secondary btn-sm" onclick="openToolModal('${t.id}')">Bearbeiten</button>
       <button class="btn ${t.aktiv?'btn-danger':'btn-primary'} btn-sm" onclick="toggleTool('${t.id}',${!t.aktiv})">${t.aktiv?'Deaktivieren':'Aktivieren'}</button>
       <button class="btn-ghost" onclick="deleteTool('${t.id}')">🗑️</button>
@@ -791,12 +796,179 @@ async function toggleTool(id,aktiv){ await api('/tools/'+id,{method:'PUT',body:J
 async function deleteTool(id){ if(!confirm('Tool löschen?')) return; await api('/tools/'+id,{method:'DELETE'}); await loadState(); buildNav(); navigate('tools'); toast('Gelöscht','success'); }
 function renderCustomTool(content, t){
   if(!t){ content.innerHTML=emptyState('Tool nicht gefunden'); return; }
-  content.innerHTML = `<div class="card"><div class="card-body"><div class="placeholder-tool">
-    <div class="eicon">${t.icon||'🧩'}</div>
-    <h2 style="color:var(--fom-primary)">${esc(t.name)}</h2>
-    <p style="margin-top:8px;max-width:520px;margin-inline:auto">${esc(t.beschreibung||'Dieses Tool ist als Platzhalter angelegt.')}</p>
-    <p style="margin-top:16px;font-size:13px">Eigene Logik ergänzt du in <code>renderCustomTool()</code> bzw. als neues Module in <code>public/index.html</code>.</p>
-  </div></div></div>`;
+  const actions=document.getElementById('topbarActions');
+  actions.innerHTML=`<button class="btn btn-primary" onclick="openToolEntryModal('${t.id}')">+ Eintrag</button>`;
+
+  const all=t.eintraege||[];
+  const total=all.length;
+  const doneCount=all.filter(e=>teDone(t,e)).length;
+  const openCount=total-doneCount;
+
+  let entries=all.filter(e=>{
+    const d=teDone(t,e);
+    if(toolFilter==='offen') return !d;
+    if(toolFilter==='erledigt') return d;
+    return true;
+  });
+  const prioRank={hoch:3,mittel:2,niedrig:1};
+  entries.sort((a,b)=>{
+    const da=teDone(t,a), db_=teDone(t,b);
+    if(da!==db_) return da?1:-1;
+    const pr=(prioRank[b.prioritaet]||0)-(prioRank[a.prioritaet]||0);
+    if(pr) return pr;
+    const fa=a.faelligBis||'9999-12-31', fb=b.faelligBis||'9999-12-31';
+    if(fa!==fb) return fa<fb?-1:1;
+    return new Date(a.erstelltAm)-new Date(b.erstelltAm);
+  });
+
+  const pct=total?Math.round(doneCount/total*100):0;
+  const progress = t.typ==='checkliste' ? `<div style="margin-top:10px;max-width:420px">
+      <div style="height:8px;background:var(--gray-200);border-radius:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#28a745"></div></div>
+      <div style="font-size:12px;color:var(--gray-600);margin-top:4px">${doneCount} von ${total} erledigt (${pct}%)</div>
+    </div>` : '';
+
+  const chip=(f,label,n)=>`<button class="btn ${toolFilter===f?'btn-primary':'btn-secondary'} btn-sm" onclick="setToolFilter('${f}')">${label}${n!=null?' ('+n+')':''}</button>`;
+
+  const head=`<div class="card"><div class="card-body">
+    <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div style="font-size:34px;line-height:1">${t.icon||'🧩'}</div>
+      <div style="flex:1;min-width:200px">
+        <h2 style="color:var(--fom-primary);margin:0">${esc(t.name)}</h2>
+        ${t.beschreibung?`<p style="margin:4px 0 0;color:var(--gray-600)">${esc(t.beschreibung)}</p>`:''}
+        ${progress}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="openToolModal('${t.id}')">⚙️ Einstellungen</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      ${chip('offen','Offen',openCount)} ${chip('erledigt','Erledigt',doneCount)} ${chip('alle','Alle',total)}
+    </div>
+  </div></div>`;
+
+  const body = entries.length
+    ? `<div style="display:flex;flex-direction:column;gap:10px">${entries.map(e=>teRow(t,e)).join('')}</div>`
+    : emptyState(toolFilter==='offen'?'Keine offenen Einträge 🎉':'Noch keine Einträge – oben mit „+ Eintrag" anlegen');
+
+  content.innerHTML = head + `<div style="margin-top:14px">${body}</div>`;
+}
+
+const TE_STATUS = {
+  offen:{label:'Offen',badge:'badge-gray'},
+  in_arbeit:{label:'In Arbeit',badge:'badge-blue'},
+  erledigt:{label:'Erledigt',badge:'badge-green'}
+};
+const TE_PRIO = {
+  hoch:{label:'Hoch',badge:'badge-red'},
+  mittel:{label:'Mittel',badge:'badge-yellow'},
+  niedrig:{label:'Niedrig',badge:'badge-gray'}
+};
+const TE_STATUS_CYCLE = ['offen','in_arbeit','erledigt'];
+let toolFilter='offen';
+
+function teDone(t,e){ return t.typ==='checkliste' ? !!e.erledigt : e.status==='erledigt'; }
+function teOverdue(e,done){ if(done||!e.faelligBis) return false; return new Date(e.faelligBis+'T23:59:59') < new Date(); }
+function setToolFilter(f){ toolFilter=f; rerenderTool(State.current.slice(5)); }
+function rerenderTool(toolId){
+  const t=State.tools.find(x=>x.id===toolId);
+  if(t && State.current==='tool:'+toolId){ renderCustomTool(document.getElementById('content'), t); }
+  else { buildNav(); navigate('tools'); }
+}
+
+function teRow(t,e){
+  const done=teDone(t,e);
+  const over=teOverdue(e,done);
+  const studio = e.studioId ? studioById(e.studioId) : null;
+  const meta=[];
+  if(t.typ!=='checkliste'){
+    const st=TE_STATUS[e.status]||TE_STATUS.offen;
+    meta.push(`<span class="badge ${st.badge}">${st.label}</span>`);
+    const pr=TE_PRIO[e.prioritaet]; if(pr) meta.push(`<span class="badge ${pr.badge}">Prio: ${pr.label}</span>`);
+  }
+  if(studio) meta.push(`<span class="badge badge-blue">🏢 ${esc(studio.standort?studio.standort+' · ':'')}${esc(studio.name)}</span>`);
+  if(e.zustaendig) meta.push(`<span class="badge badge-gray">👤 ${esc(e.zustaendig)}</span>`);
+  if(e.faelligBis) meta.push(`<span class="badge ${over?'badge-red':'badge-gray'}">📅 ${fmtD(e.faelligBis)}${over?' · überfällig':''}</span>`);
+
+  const toggler = t.typ==='checkliste'
+    ? `<input type="checkbox" ${done?'checked':''} onchange="toggleToolEntry('${t.id}','${e.id}',this.checked)" style="width:20px;height:20px;margin-top:2px;cursor:pointer;flex:0 0 auto">`
+    : `<button class="btn-ghost" title="Status weiterschalten" onclick="cycleToolEntry('${t.id}','${e.id}')" style="font-size:18px;flex:0 0 auto;padding:0 4px">${done?'✅':e.status==='in_arbeit'?'🔵':'⚪'}</button>`;
+
+  return `<div class="studio-card" style="cursor:default;display:flex;gap:12px;align-items:flex-start;${done?'opacity:.65;':''}border-left-color:${over?'#dc3545':done?'#28a745':'var(--fom-primary)'}">
+    ${toggler}
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;${done?'text-decoration:line-through':''}">${esc(e.titel)}</div>
+      ${e.notiz?`<div class="infra-desc" style="margin-top:2px">${esc(e.notiz)}</div>`:''}
+      ${meta.length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${meta.join('')}</div>`:''}
+    </div>
+    <div style="display:flex;gap:2px;flex:0 0 auto">
+      <button class="btn-ghost" title="Bearbeiten" onclick="openToolEntryModal('${t.id}','${e.id}')">✏️</button>
+      <button class="btn-ghost" title="Löschen" onclick="deleteToolEntry('${t.id}','${e.id}')">🗑️</button>
+    </div>
+  </div>`;
+}
+
+function openToolEntryModal(toolId, eid){
+  const t=State.tools.find(x=>x.id===toolId); if(!t) return;
+  const e = eid ? (t.eintraege||[]).find(x=>x.id===eid)||{} : {};
+  const edit=!!eid;
+  const studioOpts = State.studios.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','de'))
+    .map(s=>`<option value="${s.id}"${e.studioId===s.id?' selected':''}>${esc(s.standort?s.standort+' · ':'')}${esc(s.name)}</option>`).join('');
+  const detailFields = t.typ==='checkliste' ? '' : `
+    <div class="form-grid">
+      <div class="form-row"><label>Status</label><select id="te_status">
+        ${Object.entries(TE_STATUS).map(([k,v])=>`<option value="${k}"${(e.status||'offen')===k?' selected':''}>${v.label}</option>`).join('')}
+      </select></div>
+      <div class="form-row"><label>Priorität</label><select id="te_prio">
+        ${Object.entries(TE_PRIO).map(([k,v])=>`<option value="${k}"${(e.prioritaet||'mittel')===k?' selected':''}>${v.label}</option>`).join('')}
+      </select></div>
+    </div>
+    <div class="form-row"><label>Zuständig</label><input id="te_zust" value="${esc(e.zustaendig||'')}" placeholder="Name / Team"></div>`;
+  const body=`
+    <div class="form-row"><label>Titel *</label><input id="te_titel" value="${esc(e.titel||'')}" placeholder="Was ist zu tun?"></div>
+    <div class="form-row"><label>Notiz</label><textarea id="te_notiz">${esc(e.notiz||'')}</textarea></div>
+    ${detailFields}
+    <div class="form-grid">
+      <div class="form-row"><label>Studio (optional)</label><select id="te_studio"><option value="">— keins —</option>${studioOpts}</select></div>
+      <div class="form-row"><label>Fällig bis</label><input type="date" id="te_faellig" value="${esc(e.faelligBis||'')}"></div>
+    </div>`;
+  openModal(edit?'Eintrag bearbeiten':'Neuer Eintrag', body, [
+    {label:'Abbrechen',cls:'btn-secondary',fn:closeModal},
+    {label:edit?'Speichern':'Hinzufügen',cls:'btn-primary',fn:()=>saveToolEntry(toolId,eid)}
+  ]);
+}
+async function saveToolEntry(toolId, eid){
+  const t=State.tools.find(x=>x.id===toolId); if(!t) return;
+  const payload={
+    titel:val('te_titel'),
+    notiz:val('te_notiz'),
+    studioId:document.getElementById('te_studio').value||'',
+    faelligBis:val('te_faellig'),
+    autor:Me.name
+  };
+  if(t.typ!=='checkliste'){
+    payload.status=document.getElementById('te_status').value;
+    payload.prioritaet=document.getElementById('te_prio').value;
+    payload.zustaendig=val('te_zust');
+  }
+  if(!payload.titel){ toast('Titel ist erforderlich','error'); return; }
+  try{
+    if(eid) await api('/tools/'+toolId+'/eintraege/'+eid,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/tools/'+toolId+'/eintraege',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); rerenderTool(toolId); toast('Gespeichert','success');
+  }catch(err){ toast(err.message,'error'); }
+}
+async function toggleToolEntry(toolId, eid, done){
+  try{ await api('/tools/'+toolId+'/eintraege/'+eid,{method:'PUT',body:JSON.stringify({erledigt:done})}); await loadState(); rerenderTool(toolId); }
+  catch(err){ toast(err.message,'error'); }
+}
+async function cycleToolEntry(toolId, eid){
+  const t=State.tools.find(x=>x.id===toolId); const e=(t.eintraege||[]).find(x=>x.id===eid); if(!e) return;
+  const next=TE_STATUS_CYCLE[(TE_STATUS_CYCLE.indexOf(e.status)+1)%TE_STATUS_CYCLE.length];
+  try{ await api('/tools/'+toolId+'/eintraege/'+eid,{method:'PUT',body:JSON.stringify({status:next})}); await loadState(); rerenderTool(toolId); }
+  catch(err){ toast(err.message,'error'); }
+}
+async function deleteToolEntry(toolId, eid){
+  if(!confirm('Eintrag löschen?')) return;
+  try{ await api('/tools/'+toolId+'/eintraege/'+eid,{method:'DELETE'}); await loadState(); rerenderTool(toolId); toast('Gelöscht','success'); }
+  catch(err){ toast(err.message,'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -899,11 +1071,16 @@ async function saveInfra(id){
 function openToolModal(id){
   const t = id ? State.tools.find(x=>x.id===id) : {};
   const edit=!!id;
+  const typ=t.typ||'liste';
   const body=`
     <div class="form-grid">
       <div class="form-row"><label>Name *</label><input id="t_name" value="${esc(t.name||'')}" placeholder="z.B. Mängelliste"></div>
       <div class="form-row"><label>Icon (Emoji)</label><input id="t_icon" value="${esc(t.icon||'🧩')}" placeholder="🧩"></div>
     </div>
+    <div class="form-row"><label>Typ</label><select id="t_typ">
+      <option value="liste"${typ==='liste'?' selected':''}>Liste – Einträge mit Status &amp; Priorität (z. B. Mängel, Aufgaben)</option>
+      <option value="checkliste"${typ==='checkliste'?' selected':''}>Checkliste – Punkte zum Abhaken</option>
+    </select></div>
     <div class="form-row"><label>Beschreibung</label><textarea id="t_desc">${esc(t.beschreibung||'')}</textarea></div>
     <div class="form-row"><label><input type="checkbox" id="t_aktiv" style="width:auto;margin-right:6px" ${t.aktiv?'checked':''}> In Seitenleiste anzeigen (aktiv)</label></div>`;
   openModal(edit?'Tool bearbeiten':'Neues Tool', body, [
@@ -912,11 +1089,13 @@ function openToolModal(id){
   ]);
 }
 async function saveTool(id){
-  const payload={name:val('t_name'),icon:val('t_icon')||'🧩',beschreibung:val('t_desc'),aktiv:document.getElementById('t_aktiv').checked};
+  const payload={name:val('t_name'),icon:val('t_icon')||'🧩',typ:document.getElementById('t_typ').value,beschreibung:val('t_desc'),aktiv:document.getElementById('t_aktiv').checked};
   if(!payload.name){ toast('Name ist erforderlich','error'); return; }
-  if(id) await api('/tools/'+id,{method:'PUT',body:JSON.stringify(payload)});
-  else await api('/tools',{method:'POST',body:JSON.stringify(payload)});
-  await loadState(); closeModal(); buildNav(); navigate('tools'); toast('Gespeichert','success');
+  try{
+    if(id) await api('/tools/'+id,{method:'PUT',body:JSON.stringify(payload)});
+    else await api('/tools',{method:'POST',body:JSON.stringify(payload)});
+    await loadState(); closeModal(); buildNav(); navigate('tools'); toast('Gespeichert','success');
+  }catch(e){ toast(e.message,'error'); }
 }
 
 // User-Profil

@@ -191,6 +191,85 @@ app.use(
 );
 
 // ───────────────────────────────────────────────────────────────────────────
+//  Tool-Einträge (Listen-/Checklisten-Punkte eigener Tools)
+// ───────────────────────────────────────────────────────────────────────────
+const TOOL_ENTRY_STATUS = ['offen', 'in_arbeit', 'erledigt'];
+const TOOL_ENTRY_PRIO = ['niedrig', 'mittel', 'hoch'];
+
+function findTool(db, id) {
+  return (db.tools || []).find((t) => t.id === id);
+}
+
+app.post('/api/tools/:id/eintraege', (req, res) => {
+  const db = readDb();
+  const tool = findTool(db, req.params.id);
+  if (!tool) return res.status(404).json({ error: 'Tool nicht gefunden' });
+  const titel = (req.body.titel || '').trim();
+  if (!titel) return res.status(400).json({ error: 'Titel ist erforderlich' });
+  const eintrag = {
+    id: uid('te'),
+    titel,
+    notiz: (req.body.notiz || '').trim(),
+    status: TOOL_ENTRY_STATUS.includes(req.body.status) ? req.body.status : 'offen',
+    erledigt: !!req.body.erledigt,
+    prioritaet: TOOL_ENTRY_PRIO.includes(req.body.prioritaet) ? req.body.prioritaet : 'mittel',
+    zustaendig: (req.body.zustaendig || '').trim(),
+    studioId: (req.body.studioId || '').trim() || null,
+    faelligBis: (req.body.faelligBis || '').trim(),
+    autor: (req.body.autor || '').trim(),
+    erstelltAm: nowIso(),
+    geaendertAm: nowIso(),
+  };
+  tool.eintraege = tool.eintraege || [];
+  tool.eintraege.push(eintrag);
+  tool.geaendertAm = nowIso();
+  writeDb(db);
+  res.status(201).json(eintrag);
+});
+
+app.put('/api/tools/:id/eintraege/:eid', (req, res) => {
+  const db = readDb();
+  const tool = findTool(db, req.params.id);
+  if (!tool) return res.status(404).json({ error: 'Tool nicht gefunden' });
+  const list = tool.eintraege || [];
+  const idx = list.findIndex((e) => e.id === req.params.eid);
+  if (idx === -1) return res.status(404).json({ error: 'Eintrag nicht gefunden' });
+  const next = { ...list[idx] };
+  if (req.body.titel !== undefined) {
+    const t = (req.body.titel || '').trim();
+    if (!t) return res.status(400).json({ error: 'Titel ist erforderlich' });
+    next.titel = t;
+  }
+  if (req.body.notiz !== undefined) next.notiz = (req.body.notiz || '').trim();
+  if (req.body.status !== undefined && TOOL_ENTRY_STATUS.includes(req.body.status))
+    next.status = req.body.status;
+  if (req.body.erledigt !== undefined) next.erledigt = !!req.body.erledigt;
+  if (req.body.prioritaet !== undefined && TOOL_ENTRY_PRIO.includes(req.body.prioritaet))
+    next.prioritaet = req.body.prioritaet;
+  if (req.body.zustaendig !== undefined) next.zustaendig = (req.body.zustaendig || '').trim();
+  if (req.body.studioId !== undefined) next.studioId = (req.body.studioId || '').trim() || null;
+  if (req.body.faelligBis !== undefined) next.faelligBis = (req.body.faelligBis || '').trim();
+  next.geaendertAm = nowIso();
+  list[idx] = next;
+  tool.geaendertAm = nowIso();
+  writeDb(db);
+  res.json(next);
+});
+
+app.delete('/api/tools/:id/eintraege/:eid', (req, res) => {
+  const db = readDb();
+  const tool = findTool(db, req.params.id);
+  if (!tool) return res.status(404).json({ error: 'Tool nicht gefunden' });
+  const list = tool.eintraege || [];
+  const idx = list.findIndex((e) => e.id === req.params.eid);
+  if (idx === -1) return res.status(404).json({ error: 'Eintrag nicht gefunden' });
+  const [removed] = list.splice(idx, 1);
+  tool.geaendertAm = nowIso();
+  writeDb(db);
+  res.json({ ok: true, removed });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 //  Studio-Fotos
 // ───────────────────────────────────────────────────────────────────────────
 app.post('/api/studios/:id/fotos', (req, res) => {
