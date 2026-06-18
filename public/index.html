@@ -1545,8 +1545,15 @@ function showLoginScreen(){
   closeModal();
   Me.clear();
   document.getElementById('appRoot').classList.add('auth-hidden');
+  // Lokaler Modus: kein AD-Formular, sondern die Benutzerauswahl-Liste anzeigen.
+  if(State.authMode!=='ad'){
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('appRoot').classList.remove('auth-hidden');
+    (async()=>{ try{ State.users=await api('/login-users'); }catch(_){ State.users=State.users||[]; } openLoginModal(); })();
+    return;
+  }
   const subtitle=document.getElementById('loginSubtitle');
-  if(subtitle) subtitle.textContent = State.authMode==='ad' ? 'Mit deinem BCW-/AD-Konto anmelden' : 'Lokale Entwicklungsanmeldung';
+  if(subtitle) subtitle.textContent = 'Mit deinem BCW-/AD-Konto anmelden';
   const screen=document.getElementById('loginScreen');
   screen.style.display='flex';
   document.getElementById('loginError').style.display='none';
@@ -1560,7 +1567,7 @@ function loginError(msg){ const el=document.getElementById('loginError'); el.tex
 async function loginWithAD(){
   const username=val('loginUser'), password=document.getElementById('loginPass').value;
   const btn=document.getElementById('loginBtn');
-  if(State.authMode!=='ad'){ openLoginModal(); return; }
+  if(State.authMode!=='ad'){ document.getElementById('loginScreen').style.display='none'; document.getElementById('appRoot').classList.remove('auth-hidden'); openLoginModal(); return; }
   if(!username||!password){ loginError('Bitte Benutzername und Passwort eingeben'); return; }
   btn.disabled=true; btn.textContent='Anmeldung…'; document.getElementById('loginError').style.display='none';
   try{
