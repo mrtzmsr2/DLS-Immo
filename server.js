@@ -82,12 +82,16 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // Aktiv, sobald die Umgebungsvariablen gesetzt sind. Die Suche bindet mit einem
 // dedizierten, lesenden Service-Account ans AD und liefert Treffer für die
 // Benutzeranlage. Ohne Konfiguration bleibt die manuelle Anlage unverändert.
-const AD_URL = process.env.AD_URL || 'ldap://bcw-intern.local';
+const AD_URL = process.env.AD_URL || 'ldaps://bcw-intern.local:636';
 const AD_SUFFIX = process.env.AD_SUFFIX || 'dc=bcw-intern,dc=local';
 const AD_DOMAIN = process.env.AD_DOMAIN || 'bcw-intern.local';
 const AD_BIND_USER = process.env.AD_BIND_USER || ''; // z.B. svc-dlsportal
 const AD_BIND_PASS = process.env.AD_BIND_PASS || '';
-const AD_TLS_REJECT_UNAUTHORIZED = process.env.AD_TLS_REJECT_UNAUTHORIZED !== 'false';
+// Der Domaincontroller lehnt unverschlüsselte Simple-Binds (Port 389) ab
+// (LDAP-Signing/Channel-Binding). Daher LDAPS. Das interne CA-Zertifikat ist
+// Node nicht bekannt, deshalb im internen Netz keine Zertifikatsprüfung –
+// per AD_TLS_REJECT_UNAUTHORIZED=true erzwingbar, wenn die Root-CA hinterlegt ist.
+const AD_TLS_REJECT_UNAUTHORIZED = process.env.AD_TLS_REJECT_UNAUTHORIZED === 'true';
 const AD_SERVICE_ENABLED = !!(AD_URL && AD_BIND_USER && AD_BIND_PASS);
 const AD_LOGIN_ENABLED = AUTH_MODE === 'ad' && !!AD_URL;
 // Fester Erst-Admin (wie in der Dienstwagen-App): dieses AD-Konto erhält beim
