@@ -29,7 +29,9 @@ const WRITE_LOCK_FILE = path.join(DATA_DIR, 'db.write.lock');
 const BACKUP_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const BACKUP_RETENTION = Number(process.env.BACKUP_RETENTION || 60);
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
-const AUTH_MODE = process.env.AUTH_MODE || (process.env.AD_URL ? 'ad' : 'local');
+// Fest auf Active-Directory-Anmeldung (wie die Dienstwagen-/Immomanagement-App).
+// Über AUTH_MODE=local lässt sich für lokale Entwicklung weiterhin umschalten.
+const AUTH_MODE = process.env.AUTH_MODE || 'ad';
 const requestContext = new AsyncLocalStorage();
 
 app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
@@ -80,14 +82,18 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // Aktiv, sobald die Umgebungsvariablen gesetzt sind. Die Suche bindet mit einem
 // dedizierten, lesenden Service-Account ans AD und liefert Treffer für die
 // Benutzeranlage. Ohne Konfiguration bleibt die manuelle Anlage unverändert.
-const AD_URL = process.env.AD_URL || '';
+const AD_URL = process.env.AD_URL || 'ldap://bcw-intern.local';
 const AD_SUFFIX = process.env.AD_SUFFIX || 'dc=bcw-intern,dc=local';
-const AD_DOMAIN = process.env.AD_DOMAIN || 'BCW-INTERN';
+const AD_DOMAIN = process.env.AD_DOMAIN || 'bcw-intern.local';
 const AD_BIND_USER = process.env.AD_BIND_USER || ''; // z.B. svc-dlsportal
 const AD_BIND_PASS = process.env.AD_BIND_PASS || '';
 const AD_TLS_REJECT_UNAUTHORIZED = process.env.AD_TLS_REJECT_UNAUTHORIZED !== 'false';
 const AD_SERVICE_ENABLED = !!(AD_URL && AD_BIND_USER && AD_BIND_PASS);
 const AD_LOGIN_ENABLED = AUTH_MODE === 'ad' && !!AD_URL;
+// Fester Erst-Admin (wie in der Dienstwagen-App): dieses AD-Konto erhält beim
+// Start garantiert Superadmin-Zugang, damit nach der AD-Umstellung niemand
+// ausgesperrt wird. Über DLS_INITIAL_ADMIN überschreibbar.
+const INITIAL_ADMIN = (process.env.DLS_INITIAL_ADMIN || 'moritz.moser').trim().toLowerCase();
 
 let LdapClient = null;
 if (AD_URL) {
@@ -219,6 +225,39 @@ function ensureDb() {
     if (!Array.isArray(db.backups)) {
       db.backups = [];
       changed = true;
+    }
+    // Erst-Admin im AD-Modus garantieren: keiner darf nach der Umstellung
+    // ausgesperrt sein. Vorhandenem Superadmin ohne adUser wird der
+    // INITIAL_ADMIN zugeordnet; sonst ein neuer Superadmin angelegt.
+    if (AUTH_MODE === 'ad' && INITIAL_ADMIN) {
+      const users = Array.isArray(db.users) ? db.users : (db.users = []);
+      const mapped = users.find((u) => (u.adUser || '').trim().toLowerCase() === INITIAL_ADMIN);
+      if (!mapped) {
+        const superNoAd = users.find((u) => u.superadmin && !(u.adUser || '').trim());
+        if (superNoAd) {
+          superNoAd.adUser = INITIAL_ADMIN;
+          superNoAd.aktiv = true;
+          changed = true;
+        } else {
+          users.push({
+            id: 'usr_' + crypto.randomBytes(6).toString('hex'),
+            vorname: INITIAL_ADMIN.split('.')[0] ? INITIAL_ADMIN.split('.')[0].replace(/^./, (c) => c.toUpperCase()) : INITIAL_ADMIN,
+            nachname: INITIAL_ADMIN.split('.')[1] ? INITIAL_ADMIN.split('.')[1].replace(/^./, (c) => c.toUpperCase()) : '',
+            team: 'immo',
+            email: '',
+            adUser: INITIAL_ADMIN,
+            abteilung: '',
+            superadmin: true,
+            aktiv: true,
+            letzterLogin: '',
+          });
+          changed = true;
+        }
+      } else if (mapped.aktiv === false || !mapped.superadmin) {
+        mapped.aktiv = true;
+        mapped.superadmin = true;
+        changed = true;
+      }
     }
     if (changed) {
       const tmp = DB_FILE + '.tmp';
