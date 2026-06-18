@@ -171,6 +171,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 .modal-body{padding:20px 24px}
 .modal-footer{padding:16px 24px;border-top:1px solid var(--gray-100);display:flex;gap:10px;justify-content:flex-end}
 .modal.no-close .modal-close{display:none}
+.login-screen{position:fixed;inset:0;background:var(--fom-gradient);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.login-card{width:100%;max-width:410px;background:#fff;border-radius:12px;box-shadow:0 18px 60px rgba(0,80,75,.28);padding:34px 32px;border-top:4px solid var(--fom-primary-dark)}
+.login-logo{text-align:center;font-size:42px;margin-bottom:10px}
+.login-card h1{font-size:19px;font-weight:800;color:var(--fom-primary);text-align:center;margin-bottom:4px}
+.login-card p{font-size:13px;color:var(--gray-600);text-align:center;margin-bottom:22px}
+.login-error{display:none;background:var(--red-bg);color:var(--red);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.login-card .btn-primary{width:100%;justify-content:center;margin-top:4px}
+.app.auth-hidden{display:none}
 .login-list{display:flex;flex-direction:column;gap:6px;max-height:46vh;overflow:auto;margin-top:4px}
 .login-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:13.5px;transition:all .15s}
 .login-item:hover{border-color:var(--fom-primary);background:var(--gray-50)}
@@ -252,6 +260,15 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 .placeholder-tool{text-align:center;padding:60px 24px;color:var(--gray-400)}
 .placeholder-tool .eicon{font-size:48px;margin-bottom:16px}
 .modal-wide{max-width:760px}
+.search-box{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+.search-box input{font-size:15px;padding:12px 14px}
+.assistant-answer{border-left:4px solid var(--fom-primary);background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:14px 16px;margin-bottom:14px;color:var(--gray-700)}
+.result-list{display:flex;flex-direction:column;gap:8px}
+.result-item{width:100%;text-align:left;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:12px 14px;cursor:pointer;font-family:inherit;transition:all .15s}
+.result-item:hover{border-color:var(--fom-primary);box-shadow:var(--shadow-sm)}
+.result-title{font-weight:700;color:var(--gray-800);margin-bottom:2px}
+.result-snippet{font-size:13px;color:var(--gray-600)}
+.audit-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 
 /* Fotos */
 .foto-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px;margin-bottom:14px}
@@ -271,7 +288,19 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 </style>
 </head>
 <body>
-<div class="app">
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">🏢</div>
+    <h1>DLS ↔ Immo</h1>
+    <p id="loginSubtitle">Mit deinem BCW-/AD-Konto anmelden</p>
+    <div class="login-error" id="loginError"></div>
+    <div class="form-row"><label>Benutzername</label><input id="loginUser" autocomplete="username" placeholder="vorname.nachname"></div>
+    <div class="form-row"><label>Passwort</label><input type="password" id="loginPass" autocomplete="current-password" placeholder="Passwort"></div>
+    <button class="btn btn-primary" id="loginBtn" onclick="loginWithAD()">Anmelden</button>
+  </div>
+</div>
+
+<div class="app auth-hidden" id="appRoot">
   <div class="scrim" id="scrim" onclick="toggleSidebar(false)"></div>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
@@ -310,7 +339,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--fom-prim
 // ════════════════════════════════════════════════════════════════════════════
 //  STATE & API
 // ════════════════════════════════════════════════════════════════════════════
-const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], vorgaenge:[], kanaele:[], adEnabled:false, current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null, currentVorgang:null, currentKanal:'kan_allg', editingMsg:null, reactPickerFor:null };
+const State = { studios:[], infrastruktur:[], nachrichten:[], tools:[], users:[], vorgaenge:[], kanaele:[], auditLog:[], me:null, adEnabled:false, adLoginEnabled:false, authMode:'local', current:'dashboard', currentStudio:null, currentThread:null, currentMangel:null, currentVorgang:null, currentKanal:'kan_allg', editingMsg:null, reactPickerFor:null };
 // Anhänge, die einer neuen Nachricht beim Senden beigefügt werden.
 let komPending = [];
 
@@ -324,14 +353,14 @@ const TEAMS = {
 };
 
 const Me = {
-  get id(){ return localStorage.getItem('dls_uid') || ''; },
-  get user(){ return State.users.find(u=>u.id===this.id) || null; },
+  get id(){ return (State.me && State.me.id) || ''; },
+  get user(){ return State.users.find(u=>u.id===this.id) || State.me || null; },
   get name(){ const u=this.user; return u ? `${u.vorname} ${u.nachname}`.trim() : ''; },
   // Kurzlabel des Teams (wird Meldungen/Nachrichten zugeordnet, z.B. "DLS").
   get team(){ const u=this.user; return u ? (TEAMS[u.team]?.short || u.team) : ''; },
   get teamCode(){ const u=this.user; return u ? u.team : ''; },
-  setId(id){ localStorage.setItem('dls_uid', id); },
-  clear(){ localStorage.removeItem('dls_uid'); }
+  setUser(user){ State.me = user || null; },
+  clear(){ State.me = null; localStorage.removeItem('dls_uid'); }
 };
 
 // Berechtigungs-Helfer (UI-Ebene; serverseitig zusätzlich abgesichert).
@@ -341,8 +370,12 @@ function isMelder(){ const u=Me.user; return !!(u && u.team==='standort'); }
 function canManage(){ const u=Me.user; return !!(u && u.team!=='standort'); }
 
 async function api(path, opts={}){
-  const headers = { 'Content-Type':'application/json', 'X-Acting-User': Me.id, ...(opts.headers||{}) };
-  const res = await fetch('/api'+path, { ...opts, headers });
+  const headers = { ...(opts.body ? {'Content-Type':'application/json'} : {}), ...(opts.headers||{}) };
+  const res = await fetch('/api'+path, { ...opts, headers, credentials:'same-origin' });
+  if(res.status===401 && !['/login','/login-local','/me','/bootstrap'].some(p=>path.startsWith(p))){
+    showLoginScreen();
+    throw new Error('Sitzung abgelaufen – bitte erneut anmelden');
+  }
   if(!res.ok){ const e = await res.json().catch(()=>({error:res.statusText})); throw new Error(e.error||'Fehler'); }
   return res.status===204 ? null : res.json();
 }
@@ -350,7 +383,8 @@ async function loadState(){
   const s = await api('/state');
   State.studios = s.studios||[]; State.infrastruktur = s.infrastruktur||[];
   State.nachrichten = s.nachrichten||[]; State.tools = s.tools||[]; State.users = s.users||[]; State.vorgaenge = s.vorgaenge||[];
-  State.kanaele = s.kanaele||[]; State.adEnabled = !!s.adEnabled;
+  State.kanaele = s.kanaele||[]; State.auditLog = s.auditLog||[]; State.me = s.me||State.me||null;
+  State.adEnabled = !!s.adEnabled; State.adLoginEnabled = !!s.adLoginEnabled; State.authMode = s.authMode||State.authMode;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -391,11 +425,13 @@ const Modules = [
   { key:'infrastruktur', label:'Infrastruktur', icon:'🔧', section:'Übersicht', render:renderInfrastruktur, show:canManage },
   { key:'bedarf', label:'Bedarfsübersicht', icon:'📋', section:'Übersicht', render:renderBedarf, show:canManage },
   { key:'vorgaenge', label:'Vorgänge', icon:'🔄', section:'Übersicht', render:renderVorgaenge, show:canManage },
+  { key:'suche', label:'Suche', icon:'🔎', section:'Übersicht', render:renderSearch, show:canManage },
   { key:'kommunikation', label:'Kommunikation', icon:'💬', section:'Austausch', render:renderKommunikation, show:canManage },
   { key:'tools', label:'Tools verwalten', icon:'🧩', section:'Erweitern', render:renderTools, show:canManage },
   { key:'melden', label:'Mangel melden', icon:'⚠️', section:'Melden', render:renderMelden, show:isMelder },
   { key:'meine', label:'Meine Meldungen', icon:'📨', section:'Melden', render:renderMeineMeldungen, show:isMelder },
-  { key:'admin', label:'Benutzerverwaltung', icon:'👥', section:'Administration', render:renderAdmin, show:isSuperadmin }
+  { key:'admin', label:'Benutzerverwaltung', icon:'👥', section:'Administration', render:renderAdmin, show:isSuperadmin },
+  { key:'audit', label:'Audit & Backups', icon:'🛡️', section:'Administration', render:renderAudit, show:isSuperadmin }
 ];
 
 function visibleModules(){ return Modules.filter(m=> m.show ? m.show() : true); }
@@ -452,6 +488,62 @@ function navigate(key){
   const mod = Modules.find(m=>m.key===key) || visibleModules()[0] || Modules[0];
   document.getElementById('topbarTitle').textContent = mod.label;
   mod.render(content, actions);
+}
+// ════════════════════════════════════════════════════════════════════════════
+//  SUCHE
+// ════════════════════════════════════════════════════════════════════════════
+let searchQuery='';
+let searchPayload={answer:'Wonach suchst du?',results:[],counts:{}};
+let searchTimer=null;
+
+function renderSearch(content, actions){
+  actions.innerHTML='';
+  content.innerHTML=`
+    <div class="card"><div class="card-body">
+      <div class="search-box">
+        <input id="globalSearch" type="search" value="${esc(searchQuery)}" placeholder="Studios, Mängel, Nachrichten, Vorgänge durchsuchen…" oninput="queueSearch(this.value)">
+        <button class="btn btn-primary" onclick="runSearchNow()">Suchen</button>
+      </div>
+      <div class="assistant-answer">${esc(searchPayload.answer||'Wonach suchst du?')}</div>
+      ${Object.keys(searchPayload.counts||{}).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${Object.entries(searchPayload.counts).map(([k,v])=>`<span class="badge badge-gray">${esc(k)}: ${v}</span>`).join('')}</div>`:''}
+      <div class="result-list">${(searchPayload.results||[]).length?searchPayload.results.map((r,i)=>searchResultItem(r,i)).join(''):emptyState(searchQuery?'Keine Treffer':'Starte mit einer Frage oder einem Suchbegriff')}</div>
+    </div></div>`;
+  const inp=document.getElementById('globalSearch'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); }
+}
+function searchResultItem(r,i){
+  return `<button class="result-item" onclick="openSearchResult(${i})">
+    <div style="display:flex;gap:8px;align-items:center;justify-content:space-between"><div class="result-title">${esc(r.title||'Treffer')}</div><span class="badge badge-blue">${esc(r.type)}</span></div>
+    ${r.meta?`<div style="font-size:12px;color:var(--gray-400);margin-bottom:3px">${esc(r.meta)}</div>`:''}
+    <div class="result-snippet">${esc(r.snippet||'')}</div>
+  </button>`;
+}
+function queueSearch(v){
+  searchQuery=v;
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(runSearchNow,260);
+}
+async function runSearchNow(){
+  const q=(document.getElementById('globalSearch')?.value||searchQuery||'').trim();
+  searchQuery=q;
+  if(q.length<2){ searchPayload={answer:'Gib mindestens zwei Zeichen ein.',results:[],counts:{}}; renderSearch(document.getElementById('content'),document.getElementById('topbarActions')); return; }
+  try{ searchPayload=await api('/search?q='+encodeURIComponent(q)); }
+  catch(e){ searchPayload={answer:e.message,results:[],counts:{}}; }
+  renderSearch(document.getElementById('content'),document.getElementById('topbarActions'));
+}
+function openSearchResult(i){
+  const r=(searchPayload.results||[])[i]; if(!r||!r.target) return;
+  const t=r.target;
+  if(t.view==='studios' && t.id) return openStudio(t.id);
+  if(t.view==='infrastruktur' && t.id) return openMangel(t.id);
+  if(t.view==='kommunikation'){
+    if(t.kanalId) State.currentKanal=t.kanalId;
+    navigate('kommunikation');
+    if(t.id) setTimeout(()=>scrollToMsg(t.id),80);
+    return;
+  }
+  if(t.view==='vorgaenge' && t.id){ State.currentVorgang=t.id; navigate('vorgaenge'); return; }
+  if(t.view==='tools' && t.id){ navigate('tool:'+t.id); return; }
+  navigate(t.view||defaultRoute());
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1449,16 +1541,49 @@ function roleBadge(u){
 }
 function userFullName(u){ return `${u.vorname} ${u.nachname}`.trim(); }
 
-// Anmeldung: Benutzer per Vor-/Nachname suchen und auswählen. Ohne Benutzer → Erst-Admin anlegen.
+function showLoginScreen(){
+  closeModal();
+  Me.clear();
+  document.getElementById('appRoot').classList.add('auth-hidden');
+  const subtitle=document.getElementById('loginSubtitle');
+  if(subtitle) subtitle.textContent = State.authMode==='ad' ? 'Mit deinem BCW-/AD-Konto anmelden' : 'Lokale Entwicklungsanmeldung';
+  const screen=document.getElementById('loginScreen');
+  screen.style.display='flex';
+  document.getElementById('loginError').style.display='none';
+  setTimeout(()=>document.getElementById('loginUser')?.focus(),50);
+}
+function showApp(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appRoot').classList.remove('auth-hidden');
+}
+function loginError(msg){ const el=document.getElementById('loginError'); el.textContent=msg; el.style.display='block'; }
+async function loginWithAD(){
+  const username=val('loginUser'), password=document.getElementById('loginPass').value;
+  const btn=document.getElementById('loginBtn');
+  if(State.authMode!=='ad'){ openLoginModal(); return; }
+  if(!username||!password){ loginError('Bitte Benutzername und Passwort eingeben'); return; }
+  btn.disabled=true; btn.textContent='Anmeldung…'; document.getElementById('loginError').style.display='none';
+  try{
+    const data=await api('/login',{method:'POST',body:JSON.stringify({username,password})});
+    Me.setUser(data.user); document.getElementById('loginPass').value='';
+    await loadState(); showApp(); applyUser(); buildNav(); navigate(defaultRoute());
+    toast('Angemeldet als '+Me.name,'success');
+  }catch(e){ loginError(e.message); }
+  finally{ btn.disabled=false; btn.textContent='Anmelden'; }
+}
+
+// Lokaler Fallback: nur wenn AUTH_MODE nicht "ad" ist. Ohne Benutzer → Erst-Admin anlegen.
 function openLoginModal(){
   const aktive = State.users.filter(u=>u.aktiv!==false);
   if(!State.users.length){
+    const adField = State.authMode==='ad' ? `<div class="form-row"><label>AD-Benutzername *</label><input id="lo_aduser" placeholder="vorname.nachname"></div>` : '';
     openModal('👋 Willkommen – ersten Administrator anlegen', `
       <p style="color:var(--gray-600);margin-bottom:10px">Es ist noch kein Benutzer angelegt. Lege den ersten <b>Superadmin</b> an (nur DLS oder Immobilienmanagement).</p>
       <div class="form-grid">
         <div class="form-row"><label>Vorname *</label><input id="lo_vorname" placeholder="Vorname"></div>
         <div class="form-row"><label>Nachname *</label><input id="lo_nachname" placeholder="Nachname"></div>
       </div>
+      ${adField}
       <div class="form-row"><label>Team *</label><select id="lo_team">
         <option value="dls">DLS-Team</option>
         <option value="immo">Immobilienmanagement</option>
@@ -1481,29 +1606,36 @@ function renderLoginList(){
   if(q) list=list.filter(u=>userFullName(u).toLowerCase().includes(q) || (TEAMS[u.team]?.short||'').toLowerCase().includes(q));
   list.sort((a,b)=>userFullName(a).localeCompare(userFullName(b),'de'));
   box.innerHTML = list.length ? list.slice(0,40).map(u=>`
-    <button class="login-item" onclick="doLogin('${u.id}')">
+    <button class="login-item" onclick="loginLocal('${u.id}')">
       <span class="user-avatar" style="width:30px;height:30px;font-size:12px">${initials(userFullName(u))}</span>
       <span style="flex:1;text-align:left"><span style="font-weight:600">${esc(userFullName(u))}</span></span>
       ${teamBadge(u.team)} ${u.superadmin?'<span class="badge badge-red">Superadmin</span>':''}
     </button>`).join('') : `<div class="empty-state" style="padding:18px">Kein Benutzer gefunden</div>`;
 }
-async function doLogin(id){
-  Me.setId(id);
+async function loginLocal(id){
   closeModal();
-  try{ await loadState(); }catch(e){}
+  try{ const data=await api('/login-local',{method:'POST',body:JSON.stringify({userId:id})}); Me.setUser(data.user); await loadState(); }
+  catch(e){ toast(e.message,'error'); openLoginModal(); return; }
+  showApp();
   applyUser(); buildNav(); navigate(defaultRoute());
   toast('Angemeldet als '+Me.name,'success');
 }
 async function createFirstAdmin(){
   const vorname=val('lo_vorname'), nachname=val('lo_nachname'), team=document.getElementById('lo_team').value;
+  const adUser=val('lo_aduser');
   if(!vorname||!nachname){ toast('Vor- und Nachname erforderlich','error'); return; }
+  if(State.authMode==='ad'&&!adUser){ toast('AD-Benutzername erforderlich','error'); return; }
   try{
-    const u=await api('/users',{method:'POST',body:JSON.stringify({vorname,nachname,team,superadmin:true})});
-    await loadState(); Me.setId(u.id); closeModal(); applyUser(); buildNav(); navigate(defaultRoute());
+    const u=await api('/users',{method:'POST',body:JSON.stringify({vorname,nachname,team,adUser,superadmin:true})});
+    await api(State.authMode==='ad'?'/me':'/login-local',{method:State.authMode==='ad'?'GET':'POST',body:State.authMode==='ad'?undefined:JSON.stringify({userId:u.id})}).catch(()=>null);
+    await loadState(); Me.setUser(State.me||u); closeModal(); showApp(); applyUser(); buildNav(); navigate(defaultRoute());
     toast('Administrator angelegt','success');
   }catch(e){ toast(e.message,'error'); }
 }
-function logout(){ Me.clear(); applyUser(); buildNav(); openLoginModal(); }
+async function logout(){
+  try{ await api('/logout',{method:'POST'}); }catch(e){}
+  Me.clear(); applyUser(); buildNav(); showLoginScreen();
+}
 
 // Profil-Chip in der Sidebar.
 function openUserModal(){
@@ -1516,7 +1648,8 @@ function openUserModal(){
       <div style="margin-top:4px">${teamBadge(u.team)} ${roleBadge(u)}</div></div>
     </div>
     <p style="font-size:12.5px;color:var(--gray-600)">${isMelder()?'Du kannst Mängel an den Studios melden.':isSuperadmin()?'Du hast volle Rechte inklusive Benutzerverwaltung.':'Du bist Team-Mitglied mit operativem Zugriff.'}</p>`;
-  const btns=[{label:'Benutzer wechseln',cls:'btn-secondary',fn:()=>{closeModal();openLoginModal();}},
+  const switchAction = State.authMode==='ad' ? ()=>{closeModal();logout();} : ()=>{closeModal();openLoginModal();};
+  const btns=[{label:State.authMode==='ad'?'Neu anmelden':'Benutzer wechseln',cls:'btn-secondary',fn:switchAction},
     {label:'Abmelden',cls:'btn-danger',fn:()=>{closeModal();logout();}}];
   if(isSuperadmin()) btns.unshift({label:'👥 Benutzerverwaltung',cls:'btn-primary',fn:()=>{closeModal();navigate('admin');}});
   openModal('Profil', body, btns);
@@ -1527,7 +1660,7 @@ function applyUser(){
   document.getElementById('userRole').textContent = u ? (TEAMS[u.team]?.label || u.team) + (u.superadmin?' · Superadmin':'') : 'Bitte anmelden';
   document.getElementById('userAvatar').textContent = u ? initials(Me.name) : '??';
 }
-function requireUser(){ if(!isLoggedIn()){ openLoginModal(); toast('Bitte zuerst anmelden','error'); return false; } return true; }
+function requireUser(){ if(!isLoggedIn()){ State.authMode==='ad' ? showLoginScreen() : openLoginModal(); toast('Bitte zuerst anmelden','error'); return false; } return true; }
 
 // ── Benutzerverwaltung (nur Superadmin) ─────────────────────────────────────
 let adminSearch='';
@@ -1651,6 +1784,48 @@ async function deleteUser(id){
     renderAdmin(document.getElementById('content'),document.getElementById('topbarActions'));
     toast('Gelöscht','success');
   }catch(e){ toast(e.message,'error'); }
+}
+
+// ── Audit & Backups (nur Superadmin) ───────────────────────────────────────
+let auditSearch='';
+let auditRows=[];
+let backupRows=[];
+async function renderAudit(content, actions){
+  if(!isSuperadmin()){ content.innerHTML=emptyState('Kein Zugriff'); return; }
+  actions.innerHTML=`<button class="btn btn-primary" onclick="createManualBackup()">Backup jetzt</button>`;
+  content.innerHTML=`<div class="card"><div class="card-body">Audit-Log und automatische Sicherungen werden geladen…</div></div>`;
+  try{
+    const [audit, backups]=await Promise.all([
+      api('/audit?q='+encodeURIComponent(auditSearch)+'&limit=250'),
+      api('/backups')
+    ]);
+    auditRows=audit||[]; backupRows=backups||[];
+  }catch(e){ content.innerHTML=`<div class="card"><div class="card-body" style="color:var(--red)">${esc(e.message)}</div></div>`; return; }
+  content.innerHTML=`
+    <div class="card"><div class="card-body">
+      <div class="audit-controls">
+        <input id="auditSearch" value="${esc(auditSearch)}" placeholder="Audit durchsuchen…" oninput="auditSearch=this.value;debouncedAudit()" style="max-width:320px">
+        <span class="badge badge-gray">${auditRows.length} Einträge</span>
+        <span class="badge badge-blue">${backupRows.length} Backups · alle 12h</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Zeit</th><th>Aktion</th><th>Benutzer</th><th>Pfad</th><th>IP</th></tr></thead>
+        <tbody>${auditRows.length?auditRows.map(a=>`<tr><td>${fmtDT(a.zeit)}</td><td><span class="badge badge-purple">${esc(a.aktion)}</span></td><td>${esc(a.benutzer||'System')}</td><td>${esc(a.pfad||'')}</td><td>${esc(a.ip||'')}</td></tr>`).join(''):`<tr><td colspan="5">${emptyState('Noch keine Audit-Einträge')}</td></tr>`}</tbody>
+      </table></div>
+    </div></div>
+    <div class="card"><div class="card-header"><span class="card-title">🗄️ Backups</span><button class="btn btn-secondary btn-sm" onclick="createManualBackup()">Backup jetzt</button></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Datei</th><th>Erstellt</th><th>Größe</th></tr></thead>
+        <tbody>${backupRows.length?backupRows.slice(0,80).map(b=>`<tr><td>${esc(b.name)}</td><td>${fmtDT(b.createdAt)}</td><td>${Math.round((b.bytes||0)/1024)} KB</td></tr>`).join(''):`<tr><td colspan="3">${emptyState('Noch kein Backup vorhanden')}</td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  const inp=document.getElementById('auditSearch'); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); }
+}
+let auditTimer=null;
+function debouncedAudit(){ clearTimeout(auditTimer); auditTimer=setTimeout(()=>renderAudit(document.getElementById('content'),document.getElementById('topbarActions')),280); }
+async function createManualBackup(){
+  try{ const b=await api('/backups',{method:'POST',body:JSON.stringify({})}); toast('Backup erstellt: '+b.name,'success'); renderAudit(document.getElementById('content'),document.getElementById('topbarActions')); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 // ── Mangel melden (Standort-Melder) ─────────────────────────────────────────
@@ -2091,12 +2266,29 @@ function exportReport(fmt, standortEnc){
 //  INIT
 // ════════════════════════════════════════════════════════════════════════════
 async function init(){
-  try{ await loadState(); }catch(e){ toast('Server nicht erreichbar','error'); }
-  applyUser();
-  buildNav();
-  if(!isLoggedIn()){ openLoginModal(); }
-  else { navigate(defaultRoute()); }
+  try{
+    const boot=await api('/bootstrap');
+    State.authMode=boot.authMode||'local'; State.adEnabled=!!boot.adEnabled; State.adLoginEnabled=!!boot.adLoginEnabled;
+    if(!boot.hasUsers){
+      document.getElementById('loginScreen').style.display='none';
+      document.getElementById('appRoot').classList.remove('auth-hidden');
+      openLoginModal();
+      return;
+    }
+    try{ Me.setUser(await api('/me')); }
+    catch(_){
+      if(State.authMode==='ad') showLoginScreen();
+      else {
+        try{ State.users=await api('/login-users'); }catch(e){ State.users=[]; }
+        document.getElementById('loginScreen').style.display='none'; document.getElementById('appRoot').classList.remove('auth-hidden'); openLoginModal();
+      }
+      return;
+    }
+    await loadState(); showApp(); applyUser(); buildNav(); navigate(defaultRoute());
+  }catch(e){ toast('Server nicht erreichbar','error'); }
 }
+document.getElementById('loginPass').addEventListener('keydown',e=>{ if(e.key==='Enter') loginWithAD(); });
+document.getElementById('loginUser').addEventListener('keydown',e=>{ if(e.key==='Enter') document.getElementById('loginPass').focus(); });
 init();
 </script>
 </body>

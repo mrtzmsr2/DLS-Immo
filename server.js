@@ -7,9 +7,13 @@
  */
 
 const express = require('express');
+const crypto = require('crypto');
+const session = require('express-session');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const { AsyncLocalStorage } = require('async_hooks');
 const fs = require('fs');
 const path = require('path');
-const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
 
 const app = express();
@@ -19,9 +23,55 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const SEED_FILE = path.join(DATA_DIR, 'seed.json');
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const LAST_GOOD_FILE = path.join(DATA_DIR, 'db.last-good.json');
+const WRITE_LOCK_FILE = path.join(DATA_DIR, 'db.write.lock');
+const BACKUP_INTERVAL_MS = 12 * 60 * 60 * 1000;
+const BACKUP_RETENTION = Number(process.env.BACKUP_RETENTION || 60);
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const AUTH_MODE = process.env.AUTH_MODE || (process.env.AD_URL ? 'ad' : 'local');
+const requestContext = new AsyncLocalStorage();
 
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(express.json({ limit: '15mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
+app.use(session({
+  name: 'dls.sid',
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  rolling: true,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.SESSION_SECURE === 'true',
+    maxAge: 8 * 60 * 60 * 1000,
+  },
+}));
+app.use((req, _res, next) => requestContext.run({ req }, next));
+app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 240, standardHeaders: true, legacyHeaders: false }));
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false, message: { error: 'Zu viele Anmeldeversuche. Bitte später erneut versuchen.' } });
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  },
+}));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -35,25 +85,30 @@ const AD_SUFFIX = process.env.AD_SUFFIX || 'dc=bcw-intern,dc=local';
 const AD_DOMAIN = process.env.AD_DOMAIN || 'BCW-INTERN';
 const AD_BIND_USER = process.env.AD_BIND_USER || ''; // z.B. svc-dlsportal
 const AD_BIND_PASS = process.env.AD_BIND_PASS || '';
-const AD_ENABLED = !!(AD_URL && AD_BIND_USER && AD_BIND_PASS);
+const AD_TLS_REJECT_UNAUTHORIZED = process.env.AD_TLS_REJECT_UNAUTHORIZED !== 'false';
+const AD_SERVICE_ENABLED = !!(AD_URL && AD_BIND_USER && AD_BIND_PASS);
+const AD_LOGIN_ENABLED = AUTH_MODE === 'ad' && !!AD_URL;
 
 let LdapClient = null;
-if (AD_ENABLED) {
+if (AD_URL) {
   try {
     ({ Client: LdapClient } = require('ldapts'));
   } catch (e) {
-    console.warn('ldapts nicht verfügbar – BCW-Suche deaktiviert:', e.message);
+    console.warn('ldapts nicht verfügbar – BCW-Anmeldung/Suche deaktiviert:', e.message);
   }
+}
+
+function escapeLdapFilter(value) {
+  return String(value || '').replace(/[\\*()\u0000]/g, (c) =>
+    '\\' + c.charCodeAt(0).toString(16).padStart(2, '0')
+  );
 }
 
 // Sucht Personen im AD (Service-Account-Bind). Liefert max. 15 Treffer.
 async function ldapSearch(query) {
-  if (!AD_ENABLED || !LdapClient) throw new Error('BCW-Verzeichnis ist nicht konfiguriert');
+  if (!AD_SERVICE_ENABLED || !LdapClient) throw new Error('BCW-Verzeichnis ist nicht konfiguriert');
   const q = String(query || '').trim();
-  // Eingabe entschärfen (LDAP-Filter-Sonderzeichen escapen).
-  const esc = (s) =>
-    s.replace(/[\\*()\u0000]/g, (c) => '\\' + c.charCodeAt(0).toString(16).padStart(2, '0'));
-  const safe = esc(q);
+  const safe = escapeLdapFilter(q);
   const filter = q.includes('.')
     ? `(|(sAMAccountName=${safe})(mail=${safe}*)(displayName=*${safe}*))`
     : `(|(sAMAccountName=*${safe}*)(displayName=*${safe}*)(givenName=*${safe}*)(sn=*${safe}*))`;
@@ -61,7 +116,7 @@ async function ldapSearch(query) {
     url: AD_URL,
     connectTimeout: 5000,
     timeout: 8000,
-    tlsOptions: { rejectUnauthorized: false },
+    tlsOptions: { rejectUnauthorized: AD_TLS_REJECT_UNAUTHORIZED },
   });
   try {
     await client.bind(`${AD_BIND_USER}@${AD_DOMAIN}`, AD_BIND_PASS);
@@ -91,6 +146,43 @@ async function ldapSearch(query) {
   }
 }
 
+async function ldapAuthenticate(username, password) {
+  if (!AD_LOGIN_ENABLED || !LdapClient) throw new Error('AD-Anmeldung ist nicht konfiguriert');
+  const login = String(username || '').trim().replace(/^.*\\/, '').replace(/@.*$/, '');
+  if (!login || !password) throw new Error('Benutzername und Passwort erforderlich');
+  const client = new LdapClient({
+    url: AD_URL,
+    connectTimeout: 5000,
+    timeout: 8000,
+    tlsOptions: { rejectUnauthorized: AD_TLS_REJECT_UNAUTHORIZED },
+  });
+  try {
+    await client.bind(`${login}@${AD_DOMAIN}`, password);
+    const { searchEntries } = await client.search(AD_SUFFIX, {
+      scope: 'sub',
+      filter: `(sAMAccountName=${escapeLdapFilter(login)})`,
+      sizeLimit: 1,
+      attributes: ['sAMAccountName', 'displayName', 'givenName', 'sn', 'mail', 'department', 'title'],
+    });
+    const e = searchEntries[0] || {};
+    return {
+      sAMAccountName: String(e.sAMAccountName || login).toLowerCase(),
+      displayName: String(e.displayName || login),
+      givenName: String(e.givenName || ''),
+      sn: String(e.sn || ''),
+      mail: String(e.mail || ''),
+      department: String(e.department || ''),
+      title: String(e.title || ''),
+    };
+  } finally {
+    try {
+      await client.unbind();
+    } catch (_) {
+      /* ignorieren */
+    }
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 //  Persistenz
 // ───────────────────────────────────────────────────────────────────────────
@@ -105,17 +197,30 @@ const DEFAULT_KANAELE = [
 function ensureDb() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
   if (!fs.existsSync(DB_FILE)) {
     const seed = fs.existsSync(SEED_FILE)
       ? JSON.parse(fs.readFileSync(SEED_FILE, 'utf8'))
-      : { studios: [], infrastruktur: [], nachrichten: [], tools: [] };
+      : { studios: [], infrastruktur: [], nachrichten: [], tools: [], auditLog: [] };
     fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
   }
-  // Standard-Kanäle einmalig nachziehen (Migration für bestehende Datenbanken).
+  // Kleine Migrationen für bestehende JSON-Datenbanken.
   try {
     const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    let changed = false;
     if (!Array.isArray(db.kanaele) || db.kanaele.length === 0) {
       db.kanaele = DEFAULT_KANAELE.slice();
+      changed = true;
+    }
+    if (!Array.isArray(db.auditLog)) {
+      db.auditLog = [];
+      changed = true;
+    }
+    if (!Array.isArray(db.backups)) {
+      db.backups = [];
+      changed = true;
+    }
+    if (changed) {
       const tmp = DB_FILE + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
       fs.renameSync(tmp, DB_FILE);
@@ -130,11 +235,149 @@ function readDb() {
   return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
 }
 
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireWriteLock() {
+  ensureDb();
+  const started = Date.now();
+  while (Date.now() - started < 4000) {
+    try {
+      const fd = fs.openSync(WRITE_LOCK_FILE, 'wx');
+      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, at: nowIso() }));
+      return fd;
+    } catch (e) {
+      try {
+        const age = Date.now() - fs.statSync(WRITE_LOCK_FILE).mtimeMs;
+        if (age > 30000) fs.unlinkSync(WRITE_LOCK_FILE);
+      } catch (_) {
+        /* ignorieren */
+      }
+      sleepMs(25);
+    }
+  }
+  throw new Error('Datenbank ist gerade gesperrt. Bitte erneut versuchen.');
+}
+
+function releaseWriteLock(fd) {
+  try { fs.closeSync(fd); } catch (_) { /* ignorieren */ }
+  try { fs.unlinkSync(WRITE_LOCK_FILE); } catch (_) { /* ignorieren */ }
+}
+
+function isWriteRequest(req) {
+  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+}
+
+function attachRequestWriteLock(req, res) {
+  if (!isWriteRequest(req) || req.writeLockFd) return true;
+  try {
+    req.writeLockFd = acquireWriteLock();
+    res.once('finish', () => {
+      if (!req.writeLockFd) return;
+      releaseWriteLock(req.writeLockFd);
+      req.writeLockFd = null;
+    });
+    return true;
+  } catch (e) {
+    res.status(503).json({ error: e.message });
+    return false;
+  }
+}
+
+function actorFromRequest(req, db) {
+  const sessionUser = req && req.session && req.session.user;
+  if (sessionUser && sessionUser.id) return sessionUser;
+  return null;
+}
+
+function auditAction(req) {
+  if (!req || !req.path.startsWith('/api/') || req.method === 'GET' || req.method === 'HEAD') return null;
+  if (/^\/api\/(health|state|bootstrap|me)$/.test(req.path)) return null;
+  if (req.path === '/api/login') return 'LOGIN';
+  if (req.path === '/api/login-local') return 'LOGIN_LOCAL';
+  if (req.path === '/api/logout') return 'LOGOUT';
+  if (req.path === '/api/backups') return req.method === 'POST' ? 'BACKUP_MANUELL' : null;
+  const parts = req.path.split('/').filter(Boolean);
+  const resource = (parts[1] || 'api').toUpperCase();
+  const methodMap = { POST: 'ANGELEGT', PUT: 'GEAENDERT', PATCH: 'GEAENDERT', DELETE: 'GELOESCHT' };
+  return `${resource}_${methodMap[req.method] || req.method}`;
+}
+
+function appendAuditEntry(db) {
+  const ctx = requestContext.getStore();
+  const req = ctx && ctx.req;
+  const action = auditAction(req);
+  if (!action) return;
+  const actor = actorFromRequest(req, db);
+  db.auditLog = Array.isArray(db.auditLog) ? db.auditLog : [];
+  db.auditLog.push({
+    id: uid('aud'),
+    zeit: nowIso(),
+    aktion: action,
+    pfad: req.path,
+    methode: req.method,
+    benutzerId: actor ? actor.id : '',
+    benutzer: actor ? `${actor.vorname || ''} ${actor.nachname || ''}`.trim() : 'System/Bootstrap',
+    team: actor ? actor.team : '',
+    ip: req.ip || '',
+  });
+  if (db.auditLog.length > 2000) db.auditLog = db.auditLog.slice(-2000);
+}
+
 function writeDb(db) {
-  // Atomares Schreiben: erst in temp, dann umbenennen.
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
+  const ctx = requestContext.getStore();
+  const req = ctx && ctx.req;
+  const fd = req && req.writeLockFd ? req.writeLockFd : acquireWriteLock();
+  const ownsLock = !(req && req.writeLockFd);
+  try {
+    appendAuditEntry(db);
+    if (fs.existsSync(DB_FILE)) fs.copyFileSync(DB_FILE, LAST_GOOD_FILE);
+    const tmp = DB_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+    fs.renameSync(tmp, DB_FILE);
+  } finally {
+    if (ownsLock) releaseWriteLock(fd);
+  }
+}
+
+function backupFileName(reason) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `db_${stamp}_${reason.replace(/[^a-z0-9_-]/gi, '_')}.json`;
+}
+
+function pruneBackups() {
+  const files = fs.readdirSync(BACKUP_DIR)
+    .filter((f) => /^db_.*\.json$/.test(f))
+    .map((name) => ({ name, path: path.join(BACKUP_DIR, name), mtime: fs.statSync(path.join(BACKUP_DIR, name)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
+  files.slice(BACKUP_RETENTION).forEach((f) => {
+    try { fs.unlinkSync(f.path); } catch (_) { /* ignorieren */ }
+  });
+}
+
+function createBackup(reason = 'scheduled') {
+  ensureDb();
+  const file = path.join(BACKUP_DIR, backupFileName(reason));
+  fs.copyFileSync(DB_FILE, file);
+  pruneBackups();
+  return {
+    name: path.basename(file),
+    createdAt: nowIso(),
+    bytes: fs.statSync(file).size,
+    reason,
+  };
+}
+
+function listBackups() {
+  ensureDb();
+  return fs.readdirSync(BACKUP_DIR)
+    .filter((f) => /^db_.*\.json$/.test(f))
+    .map((name) => {
+      const stat = fs.statSync(path.join(BACKUP_DIR, name));
+      return { name, createdAt: stat.mtime.toISOString(), bytes: stat.size };
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
 function uid(prefix) {
@@ -251,13 +494,15 @@ function validateUser(b) {
   if (!b || !(b.vorname || '').trim()) return 'Vorname ist erforderlich';
   if (!(b.nachname || '').trim()) return 'Nachname ist erforderlich';
   if (!TEAM_CODES.includes(b.team)) return 'Ungültiges Team';
+  if (AUTH_MODE === 'ad' && !(b.adUser || '').trim()) return 'AD-Benutzername ist erforderlich';
   if (b.superadmin && !SUPER_ALLOWED.includes(b.team))
     return 'Superadmin-Rechte sind nur für DLS oder Immobilienmanagement erlaubt';
   return null;
 }
 
 function getActor(db, req) {
-  const id = (req.header('X-Acting-User') || '').trim();
+  const sessionUser = req.session && req.session.user;
+  const id = sessionUser && sessionUser.id ? sessionUser.id : '';
   if (!id) return null;
   return (db.users || []).find((u) => u.id === id) || null;
 }
@@ -268,14 +513,121 @@ function countActiveSuperadmins(users, exceptId) {
   ).length;
 }
 
+function publicUser(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    vorname: u.vorname,
+    nachname: u.nachname,
+    team: u.team,
+    email: u.email || '',
+    adUser: u.adUser || '',
+    abteilung: u.abteilung || '',
+    superadmin: !!u.superadmin,
+    aktiv: u.aktiv !== false,
+    letzterLogin: u.letzterLogin || '',
+  };
+}
+
+function setSessionUser(req, user) {
+  req.session.user = publicUser(user);
+}
+
+function hasUsers(db) {
+  return (db.users || []).length > 0;
+}
+
+function isPublicApi(req, db) {
+  if (req.path === '/api/health') return true;
+  if (req.path === '/api/bootstrap') return true;
+  if (req.path === '/api/login' || req.path === '/api/login-local' || req.path === '/api/login-users' || req.path === '/api/logout' || req.path === '/api/me') return true;
+  return !hasUsers(db) && req.method === 'POST' && req.path === '/api/users';
+}
+
+app.get('/api/bootstrap', (_req, res) => {
+  const db = readDb();
+  res.json({
+    hasUsers: hasUsers(db),
+    authMode: AUTH_MODE,
+    adEnabled: AD_SERVICE_ENABLED,
+    adLoginEnabled: AD_LOGIN_ENABLED && !!LdapClient,
+  });
+});
+
+app.post('/api/login', loginLimiter, async (req, res) => {
+  if (AUTH_MODE !== 'ad') return res.status(400).json({ error: 'AD-Anmeldung ist auf diesem System nicht aktiviert.' });
+  const username = (req.body.username || '').trim();
+  const password = req.body.password || '';
+  if (!username || !password) return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });
+  try {
+    const adUser = await ldapAuthenticate(username, password);
+    if (!attachRequestWriteLock(req, res)) return;
+    const db = readDb();
+    const localUser = (db.users || []).find(
+      (u) => (u.adUser || '').trim().toLowerCase() === adUser.sAMAccountName && u.aktiv !== false
+    );
+    if (!localUser) return res.status(403).json({ error: 'Kein Zugang. Dein AD-Konto ist für DLS-Immo nicht freigeschaltet.' });
+    localUser.letzterLogin = nowIso();
+    localUser.email = localUser.email || adUser.mail || '';
+    localUser.abteilung = localUser.abteilung || adUser.department || '';
+    setSessionUser(req, localUser);
+    writeDb(db);
+    res.json({ ok: true, user: req.session.user });
+  } catch (e) {
+    console.warn('AD-Anmeldung fehlgeschlagen:', e.message);
+    res.status(401).json({ error: 'Anmeldung fehlgeschlagen. Benutzername oder Passwort falsch.' });
+  }
+});
+
+app.post('/api/login-local', loginLimiter, (req, res) => {
+  if (AUTH_MODE === 'ad') return res.status(400).json({ error: 'Lokale Anmeldung ist deaktiviert.' });
+  if (!attachRequestWriteLock(req, res)) return;
+  const db = readDb();
+  const user = (db.users || []).find((u) => u.id === req.body.userId && u.aktiv !== false);
+  if (!user) return res.status(401).json({ error: 'Benutzer nicht gefunden oder deaktiviert.' });
+  user.letzterLogin = nowIso();
+  setSessionUser(req, user);
+  writeDb(db);
+  res.json({ ok: true, user: req.session.user });
+});
+
+app.get('/api/login-users', (req, res) => {
+  if (AUTH_MODE === 'ad') return res.status(404).json({ error: 'Lokale Anmeldung ist deaktiviert.' });
+  const db = readDb();
+  res.json((db.users || []).filter((u) => u.aktiv !== false).map(publicUser));
+});
+
+app.post('/api/logout', (req, res) => {
+  try {
+    if (!attachRequestWriteLock(req, res)) return;
+    const db = readDb();
+    writeDb(db);
+  } catch (_) {
+    /* Audit ist optional beim Logout */
+  }
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/me', (req, res) => {
+  if (!req.session || !req.session.user) return res.status(401).json({ error: 'Nicht angemeldet' });
+  const db = readDb();
+  const user = getActor(db, req);
+  if (!user || user.aktiv === false) return res.status(401).json({ error: 'Sitzung ungültig' });
+  setSessionUser(req, user);
+  res.json(req.session.user);
+});
+
 // Zentrale Berechtigungsprüfung für alle schreibenden API-Zugriffe.
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next();
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
-
   const sub = req.path.slice(4); // Pfad ohne führendes "/api"
   const db = readDb();
   const users = db.users || [];
+
+  if (isPublicApi(req, db)) {
+    if (!attachRequestWriteLock(req, res)) return;
+    return next();
+  }
 
   // Bootstrap: Solange kein Benutzer existiert, darf der erste (Super-)Admin angelegt werden.
   if (users.length === 0 && req.method === 'POST' && sub === '/users') return next();
@@ -284,15 +636,21 @@ app.use((req, res, next) => {
   if (!actor) return res.status(401).json({ error: 'Bitte zuerst anmelden.' });
   if (actor.aktiv === false) return res.status(403).json({ error: 'Dieser Benutzer ist deaktiviert.' });
 
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+
   // Benutzerverwaltung nur für Superadmins.
   if (sub === '/users' || sub.startsWith('/users/')) {
     if (!actor.superadmin)
       return res.status(403).json({ error: 'Nur Superadmins dürfen Benutzer verwalten.' });
+    if (!attachRequestWriteLock(req, res)) return;
     return next();
   }
 
   // Superadmins dürfen alles Übrige.
-  if (actor.superadmin) return next();
+  if (actor.superadmin) {
+    if (!attachRequestWriteLock(req, res)) return;
+    return next();
+  }
 
   // Standort-Melder dürfen ausschließlich Mängel melden (+ Fotos/Kommentare dazu).
   if (actor.team === 'standort') {
@@ -304,10 +662,12 @@ app.use((req, res, next) => {
       return res
         .status(403)
         .json({ error: 'Standort-Melder dürfen ausschließlich Mängel melden.' });
+    if (!attachRequestWriteLock(req, res)) return;
     return next();
   }
 
   // Reguläre Team-Mitglieder (DLS/IT/Medien/Immo): voller operativer Zugriff.
+  if (!attachRequestWriteLock(req, res)) return;
   return next();
 });
 
@@ -321,19 +681,23 @@ app.post('/api/users', (req, res) => {
   const err = validateUser(req.body);
   if (err) return res.status(400).json({ error: err });
   db.users = db.users || [];
+  const bootstrap = db.users.length === 0;
   const dup = db.users.find(
     (u) =>
       u.vorname.trim().toLowerCase() === req.body.vorname.trim().toLowerCase() &&
       u.nachname.trim().toLowerCase() === req.body.nachname.trim().toLowerCase()
   );
   if (dup) return res.status(400).json({ error: 'Benutzer mit diesem Namen existiert bereits.' });
+  const adUser = (req.body.adUser || '').trim().toLowerCase();
+  if (adUser && db.users.some((u) => (u.adUser || '').trim().toLowerCase() === adUser))
+    return res.status(400).json({ error: 'Dieser AD-Benutzer ist bereits zugeordnet.' });
   const user = {
     id: uid('usr'),
     vorname: req.body.vorname.trim(),
     nachname: req.body.nachname.trim(),
     team: req.body.team,
     email: (req.body.email || '').trim(),
-    adUser: (req.body.adUser || '').trim().toLowerCase(),
+    adUser,
     abteilung: (req.body.abteilung || '').trim(),
     superadmin: !!req.body.superadmin && SUPER_ALLOWED.includes(req.body.team),
     aktiv: req.body.aktiv !== false,
@@ -341,6 +705,7 @@ app.post('/api/users', (req, res) => {
     geaendertAm: nowIso(),
   };
   db.users.push(user);
+  if (bootstrap) setSessionUser(req, user);
   writeDb(db);
   res.status(201).json(user);
 });
@@ -353,6 +718,9 @@ app.put('/api/users/:id', (req, res) => {
   const merged = { ...list[idx], ...req.body };
   const err = validateUser(merged);
   if (err) return res.status(400).json({ error: err });
+  const adUser = (merged.adUser || '').trim().toLowerCase();
+  if (adUser && list.some((u) => u.id !== req.params.id && (u.adUser || '').trim().toLowerCase() === adUser))
+    return res.status(400).json({ error: 'Dieser AD-Benutzer ist bereits zugeordnet.' });
   const nextSuper = !!merged.superadmin && SUPER_ALLOWED.includes(merged.team);
   const wouldDeactivate = req.body.aktiv === false || !nextSuper;
   // Aussperren verhindern: mindestens ein aktiver Superadmin muss bestehen bleiben.
@@ -368,7 +736,7 @@ app.put('/api/users/:id', (req, res) => {
     nachname: merged.nachname.trim(),
     team: merged.team,
     email: (merged.email || '').trim(),
-    adUser: (merged.adUser || '').trim().toLowerCase(),
+    adUser,
     abteilung: (merged.abteilung || '').trim(),
     superadmin: nextSuper,
     aktiv: merged.aktiv !== false,
@@ -998,20 +1366,21 @@ app.get('/api/export/excel', (req, res) => {
     Fotos: (i.fotos || []).length,
     Kommentare: (i.kommentare || []).length,
   }));
-  const ws = XLSX.utils.json_to_sheet(data.length ? data : [{ Hinweis: 'Keine Einträge' }]);
-  ws['!cols'] = [
-    { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 28 }, { wch: 16 }, { wch: 14 },
-    { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 30 }, { wch: 30 }, { wch: 40 },
-    { wch: 7 }, { wch: 10 },
+  const columns = Object.keys(data[0] || { Hinweis: 'Keine Einträge' });
+  const csvEscape = (value) => {
+    let str = String(value == null ? '' : value);
+    if (/^[=+\-@]/.test(str)) str = "'" + str;
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+  const csvRows = [
+    columns.map(csvEscape).join(';'),
+    ...(data.length ? data : [{ Hinweis: 'Keine Einträge' }]).map((row) =>
+      columns.map((key) => csvEscape(row[key])).join(';')
+    ),
   ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Mängelbericht');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  const fname = `Maengelbericht_${standort || 'Alle'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  res.setHeader(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  );
+  const buf = Buffer.from('\ufeff' + csvRows.join('\r\n'), 'utf8');
+  const fname = `Maengelbericht_${standort || 'Alle'}_${new Date().toISOString().slice(0, 10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${fname.replace(/[^\w.\-]/g, '_')}"`);
   res.send(buf);
 });
@@ -1235,9 +1604,104 @@ function finishWithFooter(doc, M, PAGE_W, PAGE_H, contentW, pageCount) {
   doc.end();
 }
 
+function requireSuperadmin(req, res) {
+  const db = readDb();
+  const actor = getActor(db, req);
+  if (!actor || actor.aktiv === false) {
+    res.status(401).json({ error: 'Bitte anmelden.' });
+    return null;
+  }
+  if (!actor.superadmin) {
+    res.status(403).json({ error: 'Nur Superadmins dürfen diese Ansicht öffnen.' });
+    return null;
+  }
+  return { db, actor };
+}
+
+function normalizeSearchText(value) {
+  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function makeSnippet(text, query) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const idx = normalizeSearchText(raw).indexOf(normalizeSearchText(query));
+  const start = idx > 35 ? idx - 35 : 0;
+  const snippet = raw.slice(start, start + 180);
+  return (start ? '...' : '') + snippet + (start + 180 < raw.length ? '...' : '');
+}
+
+function searchDb(db, query) {
+  const q = normalizeSearchText(query);
+  const results = [];
+  const studios = Object.fromEntries((db.studios || []).map((s) => [s.id, s]));
+  const add = (type, title, text, meta, target) => {
+    const hay = normalizeSearchText(`${title} ${text} ${meta || ''}`);
+    if (!hay.includes(q)) return;
+    results.push({
+      type,
+      title,
+      snippet: makeSnippet(`${text} ${meta || ''}`, query),
+      meta,
+      target,
+      score: hay.startsWith(q) ? 3 : title && normalizeSearchText(title).includes(q) ? 2 : 1,
+    });
+  };
+  (db.studios || []).forEach((s) => add('Studio', s.name, `${s.standort || ''} ${s.adresse || ''} ${s.notizen || ''}`, s.standort || '', { view: 'studios', id: s.id }));
+  (db.infrastruktur || []).forEach((i) => {
+    const s = studios[i.studioId];
+    add('Mangel', i.titel, `${i.beschreibung || ''} ${i.benoetigt || ''} ${i.vorhandeneGeraete || ''} ${(i.kommentare || []).map((k) => k.text).join(' ')}`, s ? `${s.standort || ''} · ${s.name || ''}` : '', { view: 'infrastruktur', id: i.id, studioId: i.studioId });
+  });
+  (db.nachrichten || []).forEach((n) => add('Nachricht', n.text || 'Nachricht', `${n.autor || ''} ${n.team || ''}`, n.kanalId || '', { view: 'kommunikation', id: n.id, kanalId: n.kanalId }));
+  (db.vorgaenge || []).forEach((v) => add('Vorgang', v.titel, `${v.beschreibung || ''} ${(v.schritte || []).map((s) => s.titel + ' ' + (s.notiz || '')).join(' ')} ${(v.fragen || []).map((f) => f.text + ' ' + (f.antwort || '')).join(' ')}`, v.kategorie || '', { view: 'vorgaenge', id: v.id }));
+  (db.tools || []).forEach((t) => add('Tool', t.name, `${t.beschreibung || ''} ${(t.eintraege || []).map((e) => e.titel + ' ' + (e.notiz || '')).join(' ')}`, t.aktiv ? 'aktiv' : 'inaktiv', { view: 'tools', id: t.id }));
+  results.sort((a, b) => b.score - a.score || a.type.localeCompare(b.type, 'de'));
+  const counts = results.reduce((m, r) => ((m[r.type] = (m[r.type] || 0) + 1), m), {});
+  const answer = results.length
+    ? `Ich habe ${results.length} Treffer gefunden. Am stärksten vertreten: ${Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} (${v})`).join(', ')}.`
+    : 'Ich habe dazu noch keinen passenden Treffer gefunden.';
+  return { query, answer, counts, results: results.slice(0, 60) };
+}
+
+app.get('/api/search', (req, res) => {
+  const db = readDb();
+  const actor = getActor(db, req);
+  if (!actor || actor.aktiv === false) return res.status(401).json({ error: 'Bitte anmelden.' });
+  if (actor.team === 'standort') return res.status(403).json({ error: 'Die Suche ist nur für Team-Mitglieder verfügbar.' });
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ query: q, answer: 'Gib mindestens zwei Zeichen ein.', counts: {}, results: [] });
+  res.json(searchDb(db, q));
+});
+
+app.get('/api/audit', (req, res) => {
+  const ctx = requireSuperadmin(req, res);
+  if (!ctx) return;
+  const q = normalizeSearchText(req.query.q || '');
+  const limit = Math.min(Number(req.query.limit || 200), 500);
+  let rows = (ctx.db.auditLog || []).slice().reverse();
+  if (q) rows = rows.filter((r) => normalizeSearchText(`${r.aktion} ${r.benutzer} ${r.team} ${r.pfad} ${r.ip}`).includes(q));
+  res.json(rows.slice(0, limit));
+});
+
+app.get('/api/backups', (req, res) => {
+  const ctx = requireSuperadmin(req, res);
+  if (!ctx) return;
+  res.json(listBackups());
+});
+
+app.post('/api/backups', (req, res) => {
+  const ctx = requireSuperadmin(req, res);
+  if (!ctx) return;
+  const backup = createBackup('manual');
+  ctx.db.auditLog = ctx.db.auditLog || [];
+  ctx.db.auditLog.push({ id: uid('aud'), zeit: nowIso(), aktion: 'BACKUP_MANUELL', pfad: '/api/backups', methode: 'POST', benutzerId: ctx.actor.id, benutzer: `${ctx.actor.vorname} ${ctx.actor.nachname}`.trim(), team: ctx.actor.team, ip: req.ip || '', details: backup.name });
+  writeDb(ctx.db);
+  res.status(201).json(backup);
+});
+
 // Gesamter Zustand auf einen Schlag (für initiales Laden des Frontends).
 app.get('/api/state', (req, res) => {
-  res.json({ ...readDb(), adEnabled: AD_ENABLED });
+  res.json({ ...readDb(), me: req.session ? req.session.user || null : null, adEnabled: AD_SERVICE_ENABLED, adLoginEnabled: AD_LOGIN_ENABLED && !!LdapClient, authMode: AUTH_MODE });
 });
 
 // BCW-Verzeichnissuche (nur Superadmins; GET umgeht die Schreib-Middleware).
@@ -1247,7 +1711,7 @@ app.get('/api/ad/search', async (req, res) => {
   if (!actor || actor.aktiv === false) return res.status(401).json({ error: 'Bitte anmelden.' });
   if (!actor.superadmin)
     return res.status(403).json({ error: 'Nur Superadmins dürfen das BCW-Verzeichnis durchsuchen.' });
-  if (!AD_ENABLED) return res.status(503).json({ error: 'BCW-Verzeichnis (AD) ist nicht konfiguriert.' });
+  if (!AD_SERVICE_ENABLED) return res.status(503).json({ error: 'BCW-Verzeichnis (AD) ist nicht konfiguriert.' });
   const q = (req.query.q || '').toString().trim();
   if (q.length < 2) return res.status(400).json({ error: 'Bitte mindestens 2 Zeichen eingeben.' });
   try {
@@ -1266,7 +1730,34 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+function newestBackupAgeMs() {
+  const backups = listBackups();
+  if (!backups.length) return Infinity;
+  return Date.now() - new Date(backups[0].createdAt).getTime();
+}
+
+function scheduleBackups() {
+  try {
+    if (newestBackupAgeMs() >= BACKUP_INTERVAL_MS) {
+      const b = createBackup('startup');
+      console.log(`Backup erstellt: ${b.name}`);
+    }
+  } catch (e) {
+    console.warn('Startup-Backup fehlgeschlagen:', e.message);
+  }
+  const timer = setInterval(() => {
+    try {
+      const b = createBackup('scheduled');
+      console.log(`Backup erstellt: ${b.name}`);
+    } catch (e) {
+      console.warn('Geplantes Backup fehlgeschlagen:', e.message);
+    }
+  }, BACKUP_INTERVAL_MS);
+  if (timer.unref) timer.unref();
+}
+
 ensureDb();
+scheduleBackups();
 app.listen(PORT, () => {
   console.log(`DLS ↔ Immo-Portal läuft auf http://localhost:${PORT}`);
 });

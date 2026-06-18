@@ -1,6 +1,9 @@
 node_modules/
 data/db.json
 data/db.json.tmp
+data/db.last-good.json
+data/db.write.lock
+data/backups/
 data/uploads/
 *.log
 .DS_Store
